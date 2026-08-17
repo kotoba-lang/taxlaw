@@ -56,10 +56,17 @@
 
   ## Scope
 
-  Japan, and within Japan the two things a bookkeeping or invoicing actor
+  Japan, and within Japan what a bookkeeping, invoicing or payroll actor
   actually has to gate on: whether input-tax credit requires a qualified
-  invoice, and how long records must be kept. Not a tax engine. It computes
-  no tax, files nothing, and renders no opinion."
+  invoice, how long records must be kept, whether an electronic transaction's
+  record must be preserved as such, and — since 2026-08-17 — whether an
+  employer paying employment income must withhold income tax and settle the
+  year's over/under at the final payment.
+
+  Not a tax engine. **It computes no tax**, files nothing, and renders no
+  opinion. The withholding facet checks that a payroll record *accounts for*
+  withheld income tax; it does not check the amount, because 所得税法 別表第二
+  / 別表第五 were not read. Every result says so in `:taxlaw/amount-checked?`."
   (:require [clojure.string :as str]))
 
 ;; ---------------------------------------------------------------------------
@@ -196,7 +203,44 @@
      :quote (str "所得税（源泉徴収に係る所得税を除く。）及び法人税に係る"
                  "保存義務者は、電子取引を行った場合には、財務省令で定める"
                  "ところにより、当該電子取引の取引情報に係る電磁的記録を"
-                 "保存しなければならない。")}]
+                 "保存しなければならない。")}
+    {:claim :employment-income-withholding-obligation
+     :source :jp/shotokuzei-ho
+     :provision "所得税法 第百八十三条第一項"
+     :retrieved-via "e-Gov law API v2 GET /api/2/law_data/340AC0000000033"
+     :retrieved-at "2026-08-17"
+     ;; The API served revision 340AC0000000033_20260812_508AC0000000064, which
+     ;; is NEWER than the pinned corpus snapshot (`:law.status/superseded-revision`).
+     ;; Recorded so a later reader can tell which text was actually read.
+     :retrieved-revision "340AC0000000033_20260812_508AC0000000064"
+     :quote (str "居住者に対し国内において第二十八条第一項（給与所得）に規定する"
+                 "給与等（以下この章において「給与等」という。）の支払をする者は、"
+                 "その支払の際、その給与等について所得税を徴収し、その徴収の日の"
+                 "属する月の翌月十日までに、これを国に納付しなければならない。")}
+    {:claim :year-end-adjustment
+     :source :jp/shotokuzei-ho
+     :provision "所得税法 第百九十条"
+     :retrieved-via "e-Gov law API v2 GET /api/2/law_data/340AC0000000033"
+     :retrieved-at "2026-08-17"
+     ;; The API served revision 340AC0000000033_20260812_508AC0000000064, which
+     ;; is NEWER than the pinned corpus snapshot (`:law.status/superseded-revision`).
+     ;; Recorded so a later reader can tell which text was actually read.
+     :retrieved-revision "340AC0000000033_20260812_508AC0000000064"
+     :quote-is-partial? true
+     :quote-omits (str "各号（第一号・第二号とそのイ〜ヘ）は引用していない。"
+                       "そこにあるのは年税額の計算方法であって、この library が"
+                       "主張する適用条件ではない。全文は上記 API で取得できる。")
+     :quote (str "給与所得者の扶養控除等申告書を提出した居住者で、第一号に規定する"
+                 "その年中に支払うべきことが確定した給与等の金額が二千万円以下で"
+                 "あるものに対し、その提出の際に経由した給与等の支払者がその年最後に"
+                 "給与等の支払をする場合（その居住者がその後その年十二月三十一日"
+                 "までの間に当該支払者以外の者に当該申告書を提出すると見込まれる"
+                 "場合を除く。）において、同号に掲げる所得税の額の合計額がその年"
+                 "最後に給与等の支払をする時の現況により計算した第二号に掲げる"
+                 "税額に比し過不足があるときは、その超過額は、その年最後に給与等の"
+                 "支払をする際徴収すべき所得税に充当し、その不足額は、その年最後に"
+                 "給与等の支払をする際徴収してその徴収の日の属する月の翌月十日までに"
+                 "国に納付しなければならない。")}]
    :catalog/not-verified
    (str "article-level text of the statutes was not read. They are cited as "
         "instruments, and checked for existence / title / non-repeal against "
@@ -255,7 +299,74 @@
                       "保存しなければならない。")
      :rule/retrieved-at "2026-08-17"
      :rule/applies-to #{:income-tax :corporation-tax}
-     :rule/sources [:jp/dencho-ho :jp/dencho-kisoku]}}})
+     :rule/sources [:jp/dencho-ho :jp/dencho-kisoku]}
+
+    ;; 源泉徴収義務 — read, not merely cited. 所得税法 第百八十三条第一項,
+    ;; retrieved 2026-08-17 from `GET /api/2/law_data/340AC0000000033`.
+    ;;
+    ;; The article's own scope, recorded and NOT widened. It reaches a payer
+    ;; who pays 給与等 (employment income, 所得税法 第二十八条第一項)
+    ;;   - 居住者に対し   → to a RESIDENT
+    ;;   - 国内において   → DOMESTICALLY
+    ;; and nothing else. Payments to non-residents, payments made outside
+    ;; Japan, and payments that are not 給与等 are governed by provisions
+    ;; this library has NOT read, so it says nothing about them — see
+    ;; `withholding-obligation`'s `:out-of-scope`, which is deliberately not
+    ;; a finding that no obligation exists.
+    :jurisdiction/wage-withholding
+    {:rule/must-withhold-income-tax? true
+     :rule/review :read-from-source
+     :rule/provision "所得税法 第百八十三条第一項"
+     :rule/quote (str "居住者に対し国内において第二十八条第一項（給与所得）に規定する"
+                      "給与等（以下この章において「給与等」という。）の支払をする者は、"
+                      "その支払の際、その給与等について所得税を徴収し、その徴収の日の"
+                      "属する月の翌月十日までに、これを国に納付しなければならない。")
+     :rule/retrieved-at "2026-08-17"
+     :rule/retrieved-via "e-Gov law API v2 GET /api/2/law_data/340AC0000000033"
+     :rule/applies-to #{:employment-income}
+     :rule/scope {:recipient :resident
+                  :place :domestic
+                  :payment-kind :employment-income}
+     ;; 「その徴収の日の属する月の翌月十日までに」— recorded because the
+     ;; article states it. This library does not compute or check dates.
+     :rule/remittance-deadline "徴収の日の属する月の翌月十日"
+     ;; The article says 徴収し — collect THE income tax on that 給与等. How
+     ;; much that is comes from 別表第二 / 別表第五, which were NOT read, so
+     ;; nothing here verifies an amount. See `:taxlaw/amount-checked?`.
+     :rule/amount-source-not-read "所得税法 別表第二・別表第五（税額表）"
+     :rule/sources [:jp/shotokuzei-ho]}
+
+    ;; 年末調整 — read, not merely cited. 所得税法 第百九十条, same retrieval.
+    ;; The quote is the article's operative opening sentence; its 各号 set out
+    ;; how the year's tax is computed and are omitted, which
+    ;; `catalog-verification` records as `:quote-is-partial?`.
+    ;;
+    ;; Three conditions are read off the text and nothing is added to them:
+    ;;   - 給与所得者の扶養控除等申告書を提出した居住者
+    ;;   - その年中に支払うべきことが確定した給与等の金額が二千万円以下
+    ;;   - その提出の際に経由した給与等の支払者がその年最後に給与等の支払をする場合
+    :jurisdiction/year-end-adjustment
+    {:rule/must-adjust-at-year-end? true
+     :rule/review :read-from-source
+     :rule/provision "所得税法 第百九十条"
+     :rule/quote (str "給与所得者の扶養控除等申告書を提出した居住者で、第一号に規定する"
+                      "その年中に支払うべきことが確定した給与等の金額が二千万円以下で"
+                      "あるものに対し、その提出の際に経由した給与等の支払者がその年最後に"
+                      "給与等の支払をする場合（その居住者がその後その年十二月三十一日"
+                      "までの間に当該支払者以外の者に当該申告書を提出すると見込まれる"
+                      "場合を除く。）において、同号に掲げる所得税の額の合計額がその年"
+                      "最後に給与等の支払をする時の現況により計算した第二号に掲げる"
+                      "税額に比し過不足があるときは、その超過額は、その年最後に給与等の"
+                      "支払をする際徴収すべき所得税に充当し、その不足額は、その年最後に"
+                      "給与等の支払をする際徴収してその徴収の日の属する月の翌月十日までに"
+                      "国に納付しなければならない。")
+     :rule/quote-is-partial? true
+     :rule/retrieved-at "2026-08-17"
+     :rule/retrieved-via "e-Gov law API v2 GET /api/2/law_data/340AC0000000033"
+     :rule/declaration "給与所得者の扶養控除等申告書"
+     ;; 「二千万円以下」 — from the text, not from guidance.
+     :rule/income-ceiling-yen 20000000
+     :rule/sources [:jp/shotokuzei-ho]}}})
 
 ;; ---------------------------------------------------------------------------
 ;; the API
@@ -413,6 +524,218 @@
   because neither established that the record is preserved."
   [j document]
   (true? (:taxlaw/preserved? (record-preservation j document))))
+
+;; ---------------------------------------------------------------------------
+;; 源泉徴収 / 年末調整 — 所得税法 第百八十三条第一項 and 第百九十条
+;; ---------------------------------------------------------------------------
+
+(defn requires-wage-withholding?
+  "Must an employer paying employment income withhold income tax here?
+
+  **nil** for an uncatalogued jurisdiction — deliberately not false, for the
+  same reason `requires-qualified-invoice?` is."
+  [j]
+  (get-in jurisdictions
+          [(normalize j) :jurisdiction/wage-withholding
+           :rule/must-withhold-income-tax?]))
+
+(defn requires-year-end-adjustment?
+  "Must an employer settle the year's over/under-withholding at the final
+  payment? **nil** when unknown, for the same reason."
+  [j]
+  (get-in jurisdictions
+          [(normalize j) :jurisdiction/year-end-adjustment
+           :rule/must-adjust-at-year-end?]))
+
+(defn withholding-obligation
+  "Does this `payment` record account for the income tax its jurisdiction
+  obliges the payer to withhold?
+
+  Same shape as `credit-support` and `record-preservation`, with one more
+  non-`:checked` state that the read article makes necessary:
+
+    {:taxlaw/coverage :none}          nobody catalogued this jurisdiction
+    {:taxlaw/coverage :not-declared}  the record does not say what kind of
+                                      payment this is; nothing was asserted,
+                                      so nothing was checked
+    {:taxlaw/coverage :out-of-scope}  the record declares itself OUTSIDE the
+                                      one article this library has read
+    {:taxlaw/coverage :checked ...}   it is in scope, and here is the answer
+
+  `:taxlaw/accounted-for?` is absent in all three non-`:checked` cases, so a
+  careless caller gets nil — falsey, the conservative answer — and a careful
+  one can tell `refused` from `not checked`.
+
+  A `payment` declares:
+
+    :payment-kind         :employment-income | anything else
+    :recipient-residency  :resident | :non-resident | nil
+    :paid-in              :domestic | :overseas | nil
+    :income-tax-withheld  amount actually withheld, or nil
+
+  ## What `:out-of-scope` is and is not
+
+  所得税法 第百八十三条第一項 binds a payer of 給与等 **to a 居住者** **国内に
+  おいて**. A payment that declares itself outside that — a non-resident
+  recipient, a payment made abroad, a payment that is not 給与等 — is not
+  reached by the article this library read. That is **not** a finding that no
+  withholding obligation exists: other provisions govern those cases and this
+  library has not read them. `:out-of-scope` says so in
+  `:taxlaw/read-provision`, and a caller that treats it as a pass is making a
+  claim this library did not make.
+
+  ## Silence is not an exemption
+
+  A payment that declares employment income but says nothing about residency
+  or place is `:checked`, not `:out-of-scope`. Absence of a declaration is
+  the unchecked case, and the unchecked case never buys the article's own
+  exclusion — only an explicit `:non-resident` / `:overseas` does.
+
+  ## What is checked, and what is not
+
+  Presence, not amount. The article says 徴収し — collect the income tax on
+  that 給与等; how much that is comes from 別表第二 / 別表第五, which were not
+  read. `:taxlaw/amount-checked?` is `false` on every result, so a caller
+  cannot mistake `an amount is recorded` for `the amount is right`."
+  [j payment]
+  (let [path (normalize j)
+        {:keys [payment-kind recipient-residency paid-in income-tax-withheld]} payment
+        read-provision (get-in jurisdictions
+                               [path :jurisdiction/wage-withholding :rule/provision])]
+    (cond
+      (not (covered? path))
+      {:taxlaw/coverage :none :taxlaw/unchecked [path]}
+
+      (nil? payment-kind)
+      {:taxlaw/coverage :not-declared
+       :taxlaw/why "the record does not say what kind of payment this is"}
+
+      (not= :employment-income payment-kind)
+      {:taxlaw/coverage :out-of-scope
+       :taxlaw/read-provision read-provision
+       :taxlaw/payment-kind payment-kind
+       :taxlaw/why (str "読んだのは給与等（所得税法 第二十八条第一項）の支払に係る"
+                        "条文だけで、この支払はそれではないと宣言されている。"
+                        "他の条文については何も述べていない（不適用の判断ではない）。")}
+
+      (or (= :non-resident recipient-residency) (= :overseas paid-in))
+      {:taxlaw/coverage :out-of-scope
+       :taxlaw/read-provision read-provision
+       :taxlaw/recipient-residency recipient-residency
+       :taxlaw/paid-in paid-in
+       :taxlaw/why (str "読んだ条文は「居住者に対し国内において」支払う者を縛る。"
+                        "この支払はその外だと宣言されている。国外払・非居住者"
+                        "への支払を規律する条文は読んでいない（不適用の判断ではない）。")}
+
+      :else
+      (let [required? (true? (requires-wage-withholding? path))
+            ok? (or (not required?)
+                    (and (number? income-tax-withheld)
+                         (not (neg? income-tax-withheld))))]
+        {:taxlaw/coverage :checked
+         :taxlaw/jurisdiction path
+         :taxlaw/accounted-for? ok?
+         :taxlaw/withholding-required? required?
+         :taxlaw/income-tax-withheld income-tax-withheld
+         ;; presence, never amount — 別表第二 / 別表第五 were not read.
+         :taxlaw/amount-checked? false
+         :taxlaw/provision (when required? read-provision)
+         :taxlaw/remittance-deadline
+         (when required?
+           (get-in jurisdictions
+                   [path :jurisdiction/wage-withholding :rule/remittance-deadline]))
+         :taxlaw/reason (cond ok? nil
+                              (nil? income-tax-withheld) :withholding-not-recorded
+                              :else :malformed-withholding-amount)}))))
+
+(defn accounts-for-withholding?
+  "Convenience boolean over `withholding-obligation`, conservative in the same
+  way `supported?` and `preserved?` are: `:none`, `:not-declared` and
+  `:out-of-scope` all come back false, because none of them established that
+  the payment accounts for withheld income tax."
+  [j payment]
+  (true? (:taxlaw/accounted-for? (withholding-obligation j payment))))
+
+(defn year-end-adjustment
+  "Does this `record` settle the year's over/under-withholding where the read
+  article requires it?
+
+  Same four-state shape as `withholding-obligation`:
+
+    {:taxlaw/coverage :none}          nobody catalogued this jurisdiction
+    {:taxlaw/coverage :not-declared}  the record does not say whether this is
+                                      the year's final payment — 第百九十条's
+                                      own trigger — so nothing was checked
+    {:taxlaw/coverage :out-of-scope}  the record declares a condition the
+                                      article excludes
+    {:taxlaw/coverage :checked ...}   `:taxlaw/adjusted?`
+
+  A `record` declares:
+
+    :final-payment-of-year?      the payer's last 給与等 payment of the year
+    :declaration-filed?          給与所得者の扶養控除等申告書 was filed via
+                                 this payer
+    :annual-employment-income    その年中に支払うべきことが確定した給与等の金額
+    :year-end-adjustment-settled? the over/under was applied at that payment
+
+  The three exclusions are read off the text and nothing is added to them: a
+  declaration explicitly NOT filed, an explicit annual amount above
+  二千万円, and an explicit `not the final payment`. Each must be stated —
+  an absent field leaves the question open and the record in scope, because
+  silence is not an exemption here either."
+  [j record]
+  (let [path (normalize j)
+        {:keys [final-payment-of-year? declaration-filed?
+                annual-employment-income year-end-adjustment-settled?]} record
+        rule (get-in jurisdictions [path :jurisdiction/year-end-adjustment])
+        ceiling (:rule/income-ceiling-yen rule)]
+    (cond
+      (not (covered? path))
+      {:taxlaw/coverage :none :taxlaw/unchecked [path]}
+
+      (nil? final-payment-of-year?)
+      {:taxlaw/coverage :not-declared
+       :taxlaw/why (str "the record does not say whether this is the year's "
+                        "final payment, which is the article's own trigger")}
+
+      (false? final-payment-of-year?)
+      {:taxlaw/coverage :out-of-scope
+       :taxlaw/read-provision (:rule/provision rule)
+       :taxlaw/why "その年最後の給与等の支払ではないと宣言されている"}
+
+      (false? declaration-filed?)
+      {:taxlaw/coverage :out-of-scope
+       :taxlaw/read-provision (:rule/provision rule)
+       :taxlaw/why (str "給与所得者の扶養控除等申告書を提出していないと宣言されている。"
+                        "確定申告その他の経路については何も述べていない。")}
+
+      (and (number? annual-employment-income)
+           (number? ceiling)
+           (> annual-employment-income ceiling))
+      {:taxlaw/coverage :out-of-scope
+       :taxlaw/read-provision (:rule/provision rule)
+       :taxlaw/annual-employment-income annual-employment-income
+       :taxlaw/income-ceiling-yen ceiling
+       :taxlaw/why "その年中に支払うべきことが確定した給与等の金額が二千万円を超える"}
+
+      :else
+      (let [required? (true? (requires-year-end-adjustment? path))
+            ok? (or (not required?) (true? year-end-adjustment-settled?))]
+        {:taxlaw/coverage :checked
+         :taxlaw/jurisdiction path
+         :taxlaw/adjusted? ok?
+         :taxlaw/year-end-adjustment-required? required?
+         :taxlaw/amount-checked? false
+         :taxlaw/provision (when required? (:rule/provision rule))
+         :taxlaw/reason (cond ok? nil
+                              (nil? year-end-adjustment-settled?) :adjustment-not-recorded
+                              :else :year-end-adjustment-not-settled)}))))
+
+(defn adjusted?
+  "Convenience boolean over `year-end-adjustment`, conservative like the rest:
+  every non-`:checked` coverage comes back false."
+  [j record]
+  (true? (:taxlaw/adjusted? (year-end-adjustment j record))))
 
 (defn supported?
   "Convenience boolean over `credit-support`.
