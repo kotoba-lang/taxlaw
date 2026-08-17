@@ -187,7 +187,16 @@
    :catalog/content-verified
    [{:claim :qualified-invoice-registration-format
      :source :jp/nta-invoice-kohyo
-     :quote "「T」を除く13桁の半角数字"}]
+     :quote "「T」を除く13桁の半角数字"}
+    {:claim :electronic-transaction-record-preservation
+     :source :jp/dencho-ho
+     :provision "第七条"
+     :retrieved-via "e-Gov law API v2 GET /api/2/law_data/410AC0000000025"
+     :retrieved-at "2026-08-17"
+     :quote (str "所得税（源泉徴収に係る所得税を除く。）及び法人税に係る"
+                 "保存義務者は、電子取引を行った場合には、財務省令で定める"
+                 "ところにより、当該電子取引の取引情報に係る電磁的記録を"
+                 "保存しなければならない。")}]
    :catalog/not-verified
    (str "article-level text of the statutes was not read. They are cited as "
         "instruments, and checked for existence / title / non-repeal against "
@@ -229,9 +238,23 @@
      :rule/review :reachable-not-read
      :rule/sources [:jp/hojinzei-ho :jp/nta-5930]}
 
+    ;; The one rule here whose STATUTORY TEXT was read, not just cited.
+    ;; 電子帳簿保存法 第七条, retrieved 2026-08-17 from the e-Gov law API
+    ;; (`GET /api/2/law_data/410AC0000000025`) and quoted below verbatim.
+    ;;
+    ;; Note the scope in the text: it binds 保存義務者 for 所得税 (excluding
+    ;; withholding) and 法人税. It is not a universal rule about documents,
+    ;; and this catalog does not widen it into one.
     :jurisdiction/electronic-transaction
-    {:rule/must-store-electronically? true
-     :rule/review :reachable-not-read
+    {:rule/must-preserve-electronic-record? true
+     :rule/review :read-from-source
+     :rule/provision "電子帳簿保存法 第七条"
+     :rule/quote (str "所得税（源泉徴収に係る所得税を除く。）及び法人税に係る"
+                      "保存義務者は、電子取引を行った場合には、財務省令で定める"
+                      "ところにより、当該電子取引の取引情報に係る電磁的記録を"
+                      "保存しなければならない。")
+     :rule/retrieved-at "2026-08-17"
+     :rule/applies-to #{:income-tax :corporation-tax}
      :rule/sources [:jp/dencho-ho :jp/dencho-kisoku]}}})
 
 ;; ---------------------------------------------------------------------------
@@ -323,6 +346,73 @@
          :taxlaw/reason (cond ok? nil
                               (str/blank? (str n)) :missing-registration-number
                               :else :malformed-registration-number)}))))
+
+(defn requires-electronic-record?
+  "Where a transaction was conducted electronically, must its electromagnetic
+  record be preserved as such?
+
+  **nil** for an uncatalogued jurisdiction — deliberately not false, for the
+  same reason `requires-qualified-invoice?` is."
+  [j]
+  (get-in jurisdictions
+          [(normalize j) :jurisdiction/electronic-transaction
+           :rule/must-preserve-electronic-record?]))
+
+(defn record-preservation
+  "Is `document`'s preservation adequate for how the transaction happened?
+
+  Three-valued, like `credit-support`, and for the same reason — `:none` is
+  neither a pass nor a refusal:
+
+    {:taxlaw/coverage :none}            nobody catalogued this jurisdiction
+    {:taxlaw/coverage :not-declared}    the document does not say how the
+                                        transaction happened; nothing was
+                                        asserted, so nothing was checked
+    {:taxlaw/coverage :checked ...}     it does say, and here is the answer
+
+  A document declares `:origin :electronic-transaction` and
+  `:preservation :electronic | :paper`. A paper substitute for an electronic
+  transaction is the case 電子帳簿保存法 第七条 addresses: the obligation is
+  to preserve the 電磁的記録 itself, so printing it and keeping the paper is
+  not preservation of the thing the article names.
+
+  This library does NOT decide whether the holder is a 保存義務者 for
+  income or corporation tax — the article's own scope. A caller that knows
+  it is not may ignore the result; a caller that does not know has not
+  established that it is exempt."
+  [j document]
+  (let [path (normalize j)]
+    (cond
+      (not (covered? path))
+      {:taxlaw/coverage :none :taxlaw/unchecked [path]}
+
+      (nil? (:origin document))
+      {:taxlaw/coverage :not-declared
+       :taxlaw/why "the document does not say how the transaction happened"}
+
+      :else
+      (let [electronic? (= :electronic-transaction (:origin document))
+            required? (and electronic? (true? (requires-electronic-record? path)))
+            ok? (or (not required?) (= :electronic (:preservation document)))]
+        {:taxlaw/coverage :checked
+         :taxlaw/jurisdiction path
+         :taxlaw/preserved? ok?
+         :taxlaw/electronic-record-required? (boolean required?)
+         :taxlaw/preservation (:preservation document)
+         :taxlaw/provision (when required?
+                             (get-in jurisdictions
+                                     [path :jurisdiction/electronic-transaction
+                                      :rule/provision]))
+         :taxlaw/reason (cond ok? nil
+                              (nil? (:preservation document)) :preservation-not-recorded
+                              :else :electronic-record-not-preserved)}))))
+
+(defn preserved?
+  "Convenience boolean over `record-preservation`, conservative in the same
+  way `supported?` is: `:none` and `:not-declared` both come back false,
+  because neither established that the record is preserved."
+  [j document]
+  (true? (:taxlaw/preserved? (record-preservation j document))))
 
 (defn supported?
   "Convenience boolean over `credit-support`.

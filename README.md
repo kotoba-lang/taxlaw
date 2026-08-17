@@ -103,16 +103,57 @@ Measured 2026-08-17, all four discriminated:
 | change a title, leave the URL working | exit 1, `title differs` |
 | point at a directory with no corpus | exit 2, refuses |
 
+## 電子帳簿保存法 第七条 — read, then enforced
+
+The catalog carried an electronic-transaction rule that nothing consumed and
+that nobody had read: `:rule/review :reachable-not-read`. Before wiring it
+into a governor, the article was retrieved and quoted.
+
+```
+第七条  所得税（源泉徴収に係る所得税を除く。）及び法人税に係る保存義務者は、
+        電子取引を行った場合には、財務省令で定めるところにより、当該電子取引の
+        取引情報に係る電磁的記録を保存しなければならない。
+```
+
+Retrieved 2026-08-17 via `GET /api/2/law_data/410AC0000000025`, so
+`:rule/review` is `:read-from-source` and `:rule/quote` carries the text.
+
+**The article's scope is recorded, not widened.** It binds 保存義務者 for
+income tax (excluding withholding) and corporation tax — `:rule/applies-to
+#{:income-tax :corporation-tax}`. This library does not decide whether a
+given holder is one; a caller who does not know has not established that it
+is exempt.
+
+```clojure
+(taxlaw/record-preservation [:jp] {:origin :electronic-transaction
+                                   :preservation :paper})
+;; => {:taxlaw/coverage :checked :taxlaw/preserved? false
+;;     :taxlaw/reason :electronic-record-not-preserved
+;;     :taxlaw/provision "電子帳簿保存法 第七条" ...}
+```
+
+Three-valued like `credit-support`, with one more state that matters:
+`:not-declared` — the document does not say how the transaction happened, so
+nothing was asserted and nothing was checked. Printing an electronic
+transaction and keeping the paper is the case the article addresses: the
+obligation is to preserve the 電磁的記録 itself.
+
 ## What was verified, and what was not
 
 `catalog-verification` records this as data, because the two are different
 claims:
 
 - **existence / status / title** — all 8 statutes, against the corpus.
-- **content** — exactly one claim: the qualified-invoice registration-number
-  format, read off the 国税庁 publication site, which states
-  「"T"を除く13桁の半角数字」. Everything else cites the instrument **without**
-  quoting article text and is marked `:rule/review :reachable-not-read`.
+- **content** — two claims. The qualified-invoice registration-number
+  format, read off the 国税庁 publication site
+  (「"T"を除く13桁の半角数字」), and 電子帳簿保存法 第七条, retrieved from
+  the e-Gov law API and quoted in full. Everything else cites the instrument
+  **without** quoting article text and is marked
+  `:rule/review :reachable-not-read`.
+
+  The rule is: **a claim this library enforces must be read, not merely
+  cited.** Both read claims back a rule a governor acts on; the
+  `:reachable-not-read` entries back nothing that holds anything.
 
 Two candidates were **dropped rather than cited**, recorded in
 `:catalog/rejected` with reasons: `asb.or.jp` (connection timed out) and
@@ -142,7 +183,7 @@ opinion.
 | | |
 |---|---|
 | Role | capability |
-| Tests | 9 tests / 122 assertions, all green (`clojure -M:test`) |
+| Tests | 14 tests / 151 assertions, all green (`clojure -M:test`) |
 | Dependencies | none |
 | Citation check | `nbb tools/verify_citations.cljs`, three-valued, demonstrated in both directions |
 
