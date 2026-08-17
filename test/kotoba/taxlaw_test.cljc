@@ -121,3 +121,80 @@
   (testing "keys are paths, so [:jp :tokyo] needs no rename later"
     (doseq [k (keys taxlaw/jurisdictions)]
       (is (vector? k)))))
+
+;; ---------------------------------------------------------------------------
+;; 電子帳簿保存法 第七条 — the one rule whose statutory text was read
+;; ---------------------------------------------------------------------------
+
+(deftest electronic-record-rule-is-marked-as-read-not-merely-cited
+  (let [r (get-in taxlaw/jurisdictions [[:jp] :jurisdiction/electronic-transaction])]
+    (is (= :read-from-source (:rule/review r))
+        "this rule enforces something, so citing it was not enough")
+    (is (= "電子帳簿保存法 第七条" (:rule/provision r)))
+    (is (str/includes? (:rule/quote r) "電磁的記録"))
+    (is (= "2026-08-17" (:rule/retrieved-at r)))
+    (testing "the article's own scope is recorded, not widened"
+      (is (= #{:income-tax :corporation-tax} (:rule/applies-to r))))))
+
+(deftest the-verification-record-lists-this-second-read-claim
+  (let [claims (:catalog/content-verified taxlaw/catalog-verification)]
+    (is (= 2 (count claims)))
+    (is (some #(= :electronic-transaction-record-preservation (:claim %)) claims))
+    (testing "read claims are still strictly fewer than sources"
+      (is (< (count claims) (count taxlaw/sources))))))
+
+(deftest requires-electronic-record-is-nil-not-false-when-unknown
+  (is (true? (taxlaw/requires-electronic-record? [:jp])))
+  (is (nil? (taxlaw/requires-electronic-record? [:atlantis])))
+  (is (nil? (taxlaw/requires-electronic-record? nil))))
+
+(deftest record-preservation-is-three-valued
+  (testing "nobody catalogued this jurisdiction"
+    (let [r (taxlaw/record-preservation [:atlantis]
+                                        {:origin :electronic-transaction
+                                         :preservation :paper})]
+      (is (= :none (:taxlaw/coverage r)))
+      (is (not (contains? r :taxlaw/preserved?)))))
+
+  (testing "the document does not say how the transaction happened"
+    (let [r (taxlaw/record-preservation [:jp] {:preservation :paper})]
+      (is (= :not-declared (:taxlaw/coverage r)))
+      (is (not (contains? r :taxlaw/preserved?))
+          "nothing was asserted, so nothing was checked — and it must be
+           possible to tell that from a refusal")))
+
+  (testing "an electronic transaction kept only on paper"
+    (let [r (taxlaw/record-preservation [:jp] {:origin :electronic-transaction
+                                               :preservation :paper})]
+      (is (= :checked (:taxlaw/coverage r)))
+      (is (false? (:taxlaw/preserved? r)))
+      (is (= :electronic-record-not-preserved (:taxlaw/reason r)))
+      (is (= "電子帳簿保存法 第七条" (:taxlaw/provision r))
+          "a refusal names the article it rests on")))
+
+  (testing "an electronic transaction whose preservation was never recorded"
+    (let [r (taxlaw/record-preservation [:jp] {:origin :electronic-transaction})]
+      (is (false? (:taxlaw/preserved? r)))
+      (is (= :preservation-not-recorded (:taxlaw/reason r))
+          "silence about preservation is not preservation")))
+
+  (testing "an electronic transaction preserved electronically"
+    (let [r (taxlaw/record-preservation [:jp] {:origin :electronic-transaction
+                                               :preservation :electronic})]
+      (is (true? (:taxlaw/preserved? r)))
+      (is (nil? (:taxlaw/reason r)))))
+
+  (testing "a paper transaction on paper raises no article 7 question"
+    (let [r (taxlaw/record-preservation [:jp] {:origin :paper :preservation :paper})]
+      (is (true? (:taxlaw/preserved? r)))
+      (is (false? (:taxlaw/electronic-record-required? r))))))
+
+(deftest preserved?-is-conservative-like-supported?
+  (is (taxlaw/preserved? [:jp] {:origin :electronic-transaction
+                                :preservation :electronic}))
+  (is (not (taxlaw/preserved? [:jp] {:origin :electronic-transaction
+                                     :preservation :paper})))
+  (testing "neither :none nor :not-declared established preservation"
+    (is (not (taxlaw/preserved? [:atlantis] {:origin :electronic-transaction
+                                             :preservation :electronic})))
+    (is (not (taxlaw/preserved? [:jp] {:preservation :electronic})))))
