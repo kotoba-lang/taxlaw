@@ -136,12 +136,33 @@
     (testing "the article's own scope is recorded, not widened"
       (is (= #{:income-tax :corporation-tax} (:rule/applies-to r))))))
 
-(deftest the-verification-record-lists-this-second-read-claim
+(deftest the-verification-record-lists-every-read-claim
   (let [claims (:catalog/content-verified taxlaw/catalog-verification)]
-    (is (= 2 (count claims)))
+    (is (= 4 (count claims)))
     (is (some #(= :electronic-transaction-record-preservation (:claim %)) claims))
+    (is (some #(= :employment-income-withholding-obligation (:claim %)) claims))
+    (is (some #(= :year-end-adjustment (:claim %)) claims))
     (testing "read claims are still strictly fewer than sources"
-      (is (< (count claims) (count taxlaw/sources))))))
+      (is (< (count claims) (count taxlaw/sources))))
+    (testing "a partial quote says it is partial and says what it omits"
+      (doseq [c claims :when (:quote-is-partial? c)]
+        (is (not (str/blank? (:quote-omits c)))
+            "quoting part of an article without saying which part is how a
+             quote stops being evidence")))))
+
+(deftest every-enforced-rule-was-read-not-merely-cited
+  ;; The library's standing rule, as an assertion rather than a paragraph:
+  ;; each facet below backs a function callers gate on, so `:reachable-not-read`
+  ;; is not good enough for any of them.
+  (doseq [facet [:jurisdiction/electronic-transaction
+                 :jurisdiction/wage-withholding
+                 :jurisdiction/year-end-adjustment]]
+    (testing (str facet)
+      (let [r (get-in taxlaw/jurisdictions [[:jp] facet])]
+        (is (= :read-from-source (:rule/review r)))
+        (is (not (str/blank? (:rule/provision r))))
+        (is (not (str/blank? (:rule/quote r))))
+        (is (= "2026-08-17" (:rule/retrieved-at r)))))))
 
 (deftest requires-electronic-record-is-nil-not-false-when-unknown
   (is (true? (taxlaw/requires-electronic-record? [:jp])))
@@ -198,3 +219,221 @@
     (is (not (taxlaw/preserved? [:atlantis] {:origin :electronic-transaction
                                              :preservation :electronic})))
     (is (not (taxlaw/preserved? [:jp] {:preservation :electronic})))))
+
+;; ---------------------------------------------------------------------------
+;; 源泉徴収 — 所得税法 第百八十三条第一項
+;; ---------------------------------------------------------------------------
+
+(deftest the-withholding-rule-records-the-articles-own-scope
+  (let [r (get-in taxlaw/jurisdictions [[:jp] :jurisdiction/wage-withholding])]
+    (is (= "所得税法 第百八十三条第一項" (:rule/provision r)))
+    (testing "the quote is the article's text, not a paraphrase of it"
+      ;; Measured 2026-08-17: an earlier version of this test asserted the
+      ;; fragment 「所得税を徴収し」, and a mutation that rewrote the duty as
+      ;; 「所得税を徴収してもよく」 — turning a shall into a may — left the
+      ;; suite GREEN, because 徴収し is a prefix of 徴収してもよく. A quote
+      ;; assertion that a paraphrase can satisfy is not evidence of a quote,
+      ;; so the whole operative clause is pinned, ending at the 義務.
+      (is (str/includes?
+           (:rule/quote r)
+           (str "居住者に対し国内において第二十八条第一項（給与所得）に規定する"
+                "給与等（以下この章において「給与等」という。）の支払をする者は、"
+                "その支払の際、その給与等について所得税を徴収し、その徴収の日の"
+                "属する月の翌月十日までに、これを国に納付しなければならない。"))))
+    (testing "the scope in the text is recorded, not widened"
+      (is (= {:recipient :resident :place :domestic
+              :payment-kind :employment-income}
+             (:rule/scope r)))
+      (is (= #{:employment-income} (:rule/applies-to r))))
+    (testing "what was NOT read is named"
+      (is (not (str/blank? (:rule/amount-source-not-read r)))
+          "the tax TABLES were not read, so no amount here is verified"))))
+
+(deftest requires-wage-withholding?-is-nil-not-false-when-unknown
+  (is (true? (taxlaw/requires-wage-withholding? [:jp])))
+  (is (nil? (taxlaw/requires-wage-withholding? [:atlantis])))
+  (is (nil? (taxlaw/requires-wage-withholding? nil))))
+
+(def ^:private jp-wage
+  {:payment-kind :employment-income
+   :recipient-residency :resident
+   :paid-in :domestic})
+
+(deftest withholding-obligation-is-four-valued
+  (testing "nobody catalogued this jurisdiction"
+    (let [r (taxlaw/withholding-obligation [:atlantis] jp-wage)]
+      (is (= :none (:taxlaw/coverage r)))
+      (is (not (contains? r :taxlaw/accounted-for?))
+          "absent on purpose, exactly as credit-support omits :supported?")
+      (is (= [[:atlantis]] (:taxlaw/unchecked r)))))
+
+  (testing "the record does not say what kind of payment this is"
+    (let [r (taxlaw/withholding-obligation [:jp] {:income-tax-withheld 1000})]
+      (is (= :not-declared (:taxlaw/coverage r)))
+      (is (not (contains? r :taxlaw/accounted-for?))
+          "nothing was asserted, so nothing was checked")))
+
+  (testing "declared outside the one article that was read"
+    (doseq [[label p] [[:non-resident (assoc jp-wage :recipient-residency :non-resident)]
+                       [:overseas (assoc jp-wage :paid-in :overseas)]
+                       [:not-wages (assoc jp-wage :payment-kind :contractor-fee)]]]
+      (testing (str label)
+        (let [r (taxlaw/withholding-obligation [:jp] (assoc p :income-tax-withheld nil))]
+          (is (= :out-of-scope (:taxlaw/coverage r)))
+          (is (not (contains? r :taxlaw/accounted-for?))
+              "out-of-scope is NOT a finding that no obligation exists —
+               other provisions govern these and none of them was read")
+          (is (= "所得税法 第百八十三条第一項" (:taxlaw/read-provision r))
+              "it names the article it DID read, so a caller can see the limit")
+          (is (not (str/blank? (:taxlaw/why r))))))))
+
+  (testing "in scope and not accounted for"
+    (let [r (taxlaw/withholding-obligation [:jp] jp-wage)]
+      (is (= :checked (:taxlaw/coverage r)))
+      (is (false? (:taxlaw/accounted-for? r)))
+      (is (= :withholding-not-recorded (:taxlaw/reason r)))
+      (is (= "所得税法 第百八十三条第一項" (:taxlaw/provision r))
+          "a refusal names the article it rests on")
+      (is (= "徴収の日の属する月の翌月十日" (:taxlaw/remittance-deadline r)))))
+
+  (testing "a withheld amount that is not an amount"
+    (doseq [bad [-1 "1000" :none]]
+      (let [r (taxlaw/withholding-obligation
+               [:jp] (assoc jp-wage :income-tax-withheld bad))]
+        (is (false? (:taxlaw/accounted-for? r)) (str "should refuse " (pr-str bad)))
+        (is (= :malformed-withholding-amount (:taxlaw/reason r))))))
+
+  (testing "in scope and accounted for"
+    (let [r (taxlaw/withholding-obligation
+             [:jp] (assoc jp-wage :income-tax-withheld 8420))]
+      (is (true? (:taxlaw/accounted-for? r)))
+      (is (nil? (:taxlaw/reason r)))
+      (is (true? (:taxlaw/withholding-required? r)))))
+
+  (testing "zero is an amount — the article says collect THE tax on that 給与等,
+            and this library did not read the tables that say how much that is"
+    (let [r (taxlaw/withholding-obligation
+             [:jp] (assoc jp-wage :income-tax-withheld 0))]
+      (is (true? (:taxlaw/accounted-for? r)))))
+
+  (testing "presence was checked; the amount never was, on every result"
+    (doseq [w [nil 0 8420 999999999]]
+      (is (false? (:taxlaw/amount-checked?
+                   (taxlaw/withholding-obligation
+                    [:jp] (assoc jp-wage :income-tax-withheld w))))
+          "`an amount is recorded` must not be readable as `the amount is right`"))))
+
+(deftest silence-about-residency-is-not-the-articles-exclusion
+  (testing "employment income with residency and place unstated stays IN scope"
+    (let [r (taxlaw/withholding-obligation [:jp] {:payment-kind :employment-income})]
+      (is (= :checked (:taxlaw/coverage r))
+          "only an explicit :non-resident / :overseas takes a payment outside
+           the article — absence of a declaration buys no exemption")
+      (is (false? (:taxlaw/accounted-for? r))))))
+
+(deftest accounts-for-withholding?-is-conservative
+  (is (taxlaw/accounts-for-withholding? [:jp] (assoc jp-wage :income-tax-withheld 8420)))
+  (is (not (taxlaw/accounts-for-withholding? [:jp] jp-wage)))
+  (testing "no non-:checked coverage may come back true through the shortcut"
+    (is (not (taxlaw/accounts-for-withholding?
+              [:atlantis] (assoc jp-wage :income-tax-withheld 8420))))
+    (is (not (taxlaw/accounts-for-withholding?
+              [:jp] {:income-tax-withheld 8420})))
+    (is (not (taxlaw/accounts-for-withholding?
+              [:jp] (assoc jp-wage :recipient-residency :non-resident
+                           :income-tax-withheld 8420)))
+        "out-of-scope through the convenient boolean must not read as a pass")))
+
+;; ---------------------------------------------------------------------------
+;; 年末調整 — 所得税法 第百九十条
+;; ---------------------------------------------------------------------------
+
+(deftest the-year-end-rule-records-the-articles-own-conditions
+  (let [r (get-in taxlaw/jurisdictions [[:jp] :jurisdiction/year-end-adjustment])]
+    (is (= "所得税法 第百九十条" (:rule/provision r)))
+    (is (str/includes? (:rule/quote r) "給与所得者の扶養控除等申告書を提出した居住者"))
+    (is (str/includes? (:rule/quote r) "二千万円以下"))
+    (is (str/includes? (:rule/quote r) "その年最後に給与等の支払をする場合"))
+    (testing "the operative clause is pinned whole, so a paraphrase cannot
+              satisfy it — see the note on 第百八十三条第一項 above"
+      (is (str/includes?
+           (:rule/quote r)
+           (str "その超過額は、その年最後に給与等の支払をする際徴収すべき所得税に"
+                "充当し、その不足額は、その年最後に給与等の支払をする際徴収して"
+                "その徴収の日の属する月の翌月十日までに国に納付しなければならない。"))))
+    (testing "the ceiling is the number in the text"
+      (is (= 20000000 (:rule/income-ceiling-yen r))))
+    (testing "the quote admits it is only part of the article"
+      (is (true? (:rule/quote-is-partial? r))))))
+
+(deftest requires-year-end-adjustment?-is-nil-not-false-when-unknown
+  (is (true? (taxlaw/requires-year-end-adjustment? [:jp])))
+  (is (nil? (taxlaw/requires-year-end-adjustment? [:atlantis])))
+  (is (nil? (taxlaw/requires-year-end-adjustment? nil))))
+
+(def ^:private jp-year-end
+  {:final-payment-of-year? true
+   :declaration-filed? true
+   :annual-employment-income 4800000})
+
+(deftest year-end-adjustment-is-four-valued
+  (testing "nobody catalogued this jurisdiction"
+    (let [r (taxlaw/year-end-adjustment [:atlantis] jp-year-end)]
+      (is (= :none (:taxlaw/coverage r)))
+      (is (not (contains? r :taxlaw/adjusted?)))))
+
+  (testing "the record does not say whether this is the year's final payment"
+    (let [r (taxlaw/year-end-adjustment [:jp] (dissoc jp-year-end :final-payment-of-year?))]
+      (is (= :not-declared (:taxlaw/coverage r)))
+      (is (not (contains? r :taxlaw/adjusted?))
+          "the article's own trigger is unstated, so nothing was checked")))
+
+  (testing "each exclusion the article states, and only those"
+    (doseq [[label rec] [[:not-final (assoc jp-year-end :final-payment-of-year? false)]
+                         [:no-declaration (assoc jp-year-end :declaration-filed? false)]
+                         [:over-ceiling (assoc jp-year-end
+                                               :annual-employment-income 20000001)]]]
+      (testing (str label)
+        (let [r (taxlaw/year-end-adjustment [:jp] rec)]
+          (is (= :out-of-scope (:taxlaw/coverage r)))
+          (is (not (contains? r :taxlaw/adjusted?)))
+          (is (= "所得税法 第百九十条" (:taxlaw/read-provision r)))))))
+
+  (testing "二千万円ちょうど is inside the article — 「二千万円以下」"
+    (let [r (taxlaw/year-end-adjustment
+             [:jp] (assoc jp-year-end :annual-employment-income 20000000
+                          :year-end-adjustment-settled? true))]
+      (is (= :checked (:taxlaw/coverage r)))
+      (is (true? (:taxlaw/adjusted? r)))))
+
+  (testing "in scope, and the adjustment was never recorded"
+    (let [r (taxlaw/year-end-adjustment [:jp] jp-year-end)]
+      (is (= :checked (:taxlaw/coverage r)))
+      (is (false? (:taxlaw/adjusted? r)))
+      (is (= :adjustment-not-recorded (:taxlaw/reason r)))
+      (is (= "所得税法 第百九十条" (:taxlaw/provision r)))))
+
+  (testing "in scope and explicitly not settled"
+    (let [r (taxlaw/year-end-adjustment
+             [:jp] (assoc jp-year-end :year-end-adjustment-settled? false))]
+      (is (false? (:taxlaw/adjusted? r)))
+      (is (= :year-end-adjustment-not-settled (:taxlaw/reason r)))))
+
+  (testing "in scope and settled"
+    (let [r (taxlaw/year-end-adjustment
+             [:jp] (assoc jp-year-end :year-end-adjustment-settled? true))]
+      (is (true? (:taxlaw/adjusted? r)))
+      (is (nil? (:taxlaw/reason r)))))
+
+  (testing "an unstated annual amount leaves the record in scope"
+    (let [r (taxlaw/year-end-adjustment
+             [:jp] (dissoc jp-year-end :annual-employment-income))]
+      (is (= :checked (:taxlaw/coverage r))
+          "silence about the amount is not the article's ceiling exclusion"))))
+
+(deftest adjusted?-is-conservative
+  (is (taxlaw/adjusted? [:jp] (assoc jp-year-end :year-end-adjustment-settled? true)))
+  (is (not (taxlaw/adjusted? [:jp] jp-year-end)))
+  (is (not (taxlaw/adjusted? [:atlantis]
+                             (assoc jp-year-end :year-end-adjustment-settled? true))))
+  (is (not (taxlaw/adjusted? [:jp] {:year-end-adjustment-settled? true}))))

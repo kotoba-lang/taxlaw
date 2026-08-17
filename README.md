@@ -138,22 +138,98 @@ nothing was asserted and nothing was checked. Printing an electronic
 transaction and keeping the paper is the case the article addresses: the
 obligation is to preserve the 電磁的記録 itself.
 
+## 所得税法 第百八十三条第一項 / 第百九十条 — read, then enforced
+
+The withholding facet exists because a payroll actor needed it. Same standing
+rule, so the articles were retrieved first, via
+`GET /api/2/law_data/340AC0000000033` on 2026-08-17 (revision
+`340AC0000000033_20260812_508AC0000000064`, newer than the pinned corpus
+snapshot — recorded in `:retrieved-revision`).
+
+```
+第百八十三条  居住者に対し国内において第二十八条第一項（給与所得）に規定する
+             給与等（以下この章において「給与等」という。）の支払をする者は、
+             その支払の際、その給与等について所得税を徴収し、その徴収の日の
+             属する月の翌月十日までに、これを国に納付しなければならない。
+```
+
+**The scope is recorded, not widened**, and here that does real work. The
+article reaches a payer of 給与等 **居住者に対し** **国内において** — and
+nothing else. So `withholding-obligation` has a fourth state:
+
+```clojure
+(taxlaw/withholding-obligation [:jp] {:payment-kind :employment-income
+                                      :recipient-residency :resident
+                                      :paid-in :domestic})
+;; => {:taxlaw/coverage :checked :taxlaw/accounted-for? false
+;;     :taxlaw/reason :withholding-not-recorded
+;;     :taxlaw/provision "所得税法 第百八十三条第一項"
+;;     :taxlaw/amount-checked? false ...}
+
+(taxlaw/withholding-obligation [:jp] {:payment-kind :employment-income
+                                      :recipient-residency :non-resident
+                                      :income-tax-withheld 0})
+;; => {:taxlaw/coverage :out-of-scope
+;;     :taxlaw/read-provision "所得税法 第百八十三条第一項" ...}
+;;    no :taxlaw/accounted-for? key — and this is NOT a finding that no
+;;    withholding obligation exists. Other provisions govern payments to
+;;    non-residents; none of them was read.
+```
+
+**Silence is not the article's exclusion.** A payment that declares
+employment income but says nothing about residency or place stays `:checked`.
+Only an explicit `:non-resident` / `:overseas` reaches `:out-of-scope`,
+because absence of a declaration is the unchecked case and the unchecked case
+never buys an exemption.
+
+**Presence is checked; the amount never is.** The article says 徴収し —
+collect *the* income tax on that 給与等. How much that is comes from
+所得税法 別表第二 / 別表第五, which were **not** read, so every result carries
+`:taxlaw/amount-checked? false`. A recorded amount must not read as a correct
+one, and a recorded **zero** is accepted for the same reason: this library
+did not read the tables that would say otherwise.
+
+`year-end-adjustment` (第百九十条) has the same four states, and takes its
+three exclusions verbatim off the text — declaration not filed, not the
+year's final payment, annual 給与等 above **二千万円** (`:rule/income-ceiling-yen
+20000000`, the number in the article). Its quote is the operative opening
+sentence only; the 各号 set out how the year's tax is computed and are
+omitted, which `catalog-verification` records as `:quote-is-partial?` with a
+`:quote-omits` note.
+
+### A quote assertion a paraphrase can satisfy is not evidence
+
+Measured 2026-08-17. This test was green:
+
+```clojure
+(is (str/includes? (:rule/quote r) "その支払の際、その給与等について所得税を徴収し"))
+```
+
+…and it stayed green under a mutation that rewrote the duty as
+「所得税を徴収**してもよく**」 — a *shall* turned into a *may* — because
+徴収し is a prefix of 徴収してもよく. Both quote tests now pin the whole
+operative clause through the 義務, and both mutations redden.
+
 ## What was verified, and what was not
 
 `catalog-verification` records this as data, because the two are different
 claims:
 
 - **existence / status / title** — all 8 statutes, against the corpus.
-- **content** — two claims. The qualified-invoice registration-number
+- **content** — four claims. The qualified-invoice registration-number
   format, read off the 国税庁 publication site
-  (「"T"を除く13桁の半角数字」), and 電子帳簿保存法 第七条, retrieved from
-  the e-Gov law API and quoted in full. Everything else cites the instrument
-  **without** quoting article text and is marked
+  (「"T"を除く13桁の半角数字」); 電子帳簿保存法 第七条; and 所得税法
+  第百八十三条第一項 / 第百九十条 — each retrieved from the e-Gov law API and
+  quoted, the last one partially and saying so. Everything else cites the
+  instrument **without** quoting article text and is marked
   `:rule/review :reachable-not-read`.
 
   The rule is: **a claim this library enforces must be read, not merely
-  cited.** Both read claims back a rule a governor acts on; the
+  cited.** Every read claim backs a rule a governor acts on; the
   `:reachable-not-read` entries back nothing that holds anything.
+  `every-enforced-rule-was-read-not-merely-cited` asserts the direction that
+  matters — each enforced facet carries `:read-from-source`, a provision, a
+  quote and a retrieval date — so the rule is a test rather than a paragraph.
 
 Two candidates were **dropped rather than cited**, recorded in
 `:catalog/rejected` with reasons: `asb.or.jp` (connection timed out) and
@@ -164,12 +240,15 @@ nobody thought of.
 
 ## Scope
 
-Japan, and within Japan the two things a bookkeeping or invoicing actor
+Japan, and within Japan what a bookkeeping, invoicing or payroll actor
 actually has to gate on: whether input-tax credit requires a qualified
-invoice, and how long records must be kept.
+invoice, how long records must be kept, whether an electronic transaction's
+record must be preserved as such, and whether an employer paying employment
+income must withhold income tax and settle the year's over/under at the final
+payment.
 
 **Not a tax engine.** It computes no tax, files nothing, and renders no
-opinion.
+opinion — see `:taxlaw/amount-checked?`.
 
 ## Consumers
 
@@ -177,13 +256,14 @@ opinion.
 |---|---|
 | [`cloud-itonami/cloud-itonami-isco-4311`](https://github.com/cloud-itonami/cloud-itonami-isco-4311) | the **receiving** side — a journal entry claiming 仕入税額控除 must cite a document carrying a valid registration number |
 | [`cloud-itonami/tehai`](https://github.com/cloud-itonami/tehai) | the **issuing** side — an invoice drafted for a client in a qualified-invoice jurisdiction must carry the issuer's registration number, or its recipient cannot credit it |
+| [`cloud-itonami/cloud-itonami-isco-4313`](https://github.com/cloud-itonami/cloud-itonami-isco-4313) | the **paying** side — a payroll run for an employer in a jurisdiction requiring withholding must account for the income tax withheld |
 
 ## Maturity
 
 | | |
 |---|---|
 | Role | capability |
-| Tests | 14 tests / 151 assertions, all green (`clojure -M:test`) |
+| Tests | 24 tests / 255 assertions, all green (`clojure -M:test`) |
 | Dependencies | none |
 | Citation check | `nbb tools/verify_citations.cljs`, three-valued, demonstrated in both directions |
 
