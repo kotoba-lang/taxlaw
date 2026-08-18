@@ -161,7 +161,8 @@
 
 (deftest the-verification-record-lists-every-read-claim
   (let [claims (:catalog/content-verified taxlaw/catalog-verification)]
-    (is (= 12 (count claims)))
+    (is (= 13 (count claims)))
+    (is (some #(= :national-consumption-tax-rate-is-not-the-invoice-rate (:claim %)) claims))
     (is (some #(= :eu-invoice-required-details (:claim %)) claims))
     (is (some #(= :us-record-retention-states-no-period (:claim %)) claims))
     (is (some #(= :qualified-invoice-tax-amount-calculation (:claim %)) claims))
@@ -1263,3 +1264,40 @@
             "read-with-a-gap is not the same as never looked at")
         (is (= {:read 1 :of 8} (:taxlaw/facet-total r))
             "and it counts as one facet read, not zero and not two")))))
+
+(deftest the-invoice-figure-is-not-the-returns-national-tax
+  (testing "消費税額等 includes 地方消費税 by its own definition, so the 十 in
+            施行令 第七十条の十 is the combined rate. 第二十九条 sets the
+            NATIONAL rate at 百分の七・八. A caller reaching for
+            `consumption-tax-amount` as 課税標準額に対する消費税額 overstates
+            the national tax by 10/7.8 — about 28% — on every return, and the
+            return still adds up. Found by a consumer, not by this suite"
+    (let [is-not (:rule/is-not (taxlaw/facet-of
+                                [:jp] :jurisdiction/qualified-invoice-tax-amount))]
+      (is (some? is-not) "the warning is in the DATA, not only the docstring")
+      (is (= "消費税法 第二十九条" (:rule/national-rate-provision is-not)))
+      (is (= {:standard [78 1000] :reduced [624 10000]}
+             (:rule/national-rates is-not)))
+      (testing "and the rates are the ones the article states, not the ones
+                everybody says"
+        (is (str/includes? (:rule/national-rate-quote is-not) "百分の七・八"))
+        (is (str/includes? (:rule/national-rate-quote is-not) "百分の六・二四"))
+        (is (not (str/includes? (:rule/national-rate-quote is-not) "百分の十"))))
+      (testing "the arithmetic the warning is about"
+        (let [invoice (taxlaw/consumption-tax
+                       [:jp] {:method :tax-exclusive :rounding :floor
+                              :subtotals {:standard 1000000}})
+              [n d] (get-in is-not [:rule/national-rates :standard])
+              national (quot (* 1000000 n) d)]
+          (is (= 100000 invoice) "the invoice figure, at the combined rate")
+          (is (= 78000 national) "the national figure, at 第二十九条's rate")
+          (is (> invoice national)
+              "using the first where the second belongs is the overstatement"))))))
+
+(deftest this-library-computes-no-return-figure
+  (testing "積上げ vs 割戻し (施行令 第六十二条 / 第四十六条) is a taxpayer
+            election this catalog has not read, so there is no function here
+            that produces one — and the absence is asserted rather than left
+            for a reader to notice"
+    (is (empty? (filter #(re-find #"return|shinkoku|申告" (name %))
+                        (keys (ns-publics 'kotoba.taxlaw)))))))
