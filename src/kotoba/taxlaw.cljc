@@ -103,6 +103,13 @@
     :law/id "363AC0000000108"
     :source/url "https://laws.e-gov.go.jp/law/363AC0000000108"}
 
+   :jp/hojinzei-kisoku
+   {:source/title "法人税法施行規則"
+    :source/authority "日本国 / e-Gov 法令検索"
+    :source/kind :statute
+    :law/id "340M50000040012"
+    :source/url "https://laws.e-gov.go.jp/law/340M50000040012"}
+
    :jp/hojinzei-ho
    {:source/title "法人税法"
     :source/authority "日本国 / e-Gov 法令検索"
@@ -277,10 +284,36 @@
      :rule/format-review :read-from-source
      :rule/sources [:jp/shohizei-ho :jp/nta-invoice :jp/nta-6496 :jp/nta-invoice-kohyo]}
 
+    ;; Read, not cited. The flat `:rule/years 7` that stood here was wrong
+    ;; in three ways, and each is in the text:
+    ;;
+    ;;   it is 7 years OR 10 (第二十六条の三, when 欠損金の繰越し is relied on)
+    ;;   it binds 青色申告法人, not every company
+    ;;   the clock starts at 起算日 — fiscal-year end + 2 months — not at
+    ;;   the transaction date
+    ;;
+    ;; Retrieved 2026-08-18, `GET /api/2/law_data/340M50000040012`,
+    ;; revision 340M50000040012_20260731_508M60000040051.
     :jurisdiction/retention
     {:rule/years 7
-     :rule/review :reachable-not-read
-     :rule/sources [:jp/hojinzei-ho :jp/nta-5930]}
+     :rule/years-with-loss-carryforward 10
+     :rule/binds :blue-return-corporation
+     :rule/review :read-from-source
+     :rule/provision "法人税法施行規則 第五十九条"
+     :rule/quote (str "青色申告法人は、次に掲げる帳簿書類を整理し、起算日から"
+                      "七年間、これを納税地…に保存しなければならない。")
+     :rule/basis-date-provision "法人税法施行規則 第五十九条第二項"
+     :rule/basis-date-quote (str "前項に規定する起算日とは、帳簿については"
+                                 "その閉鎖の日の属する事業年度終了の日の翌日から"
+                                 "二月を経過した日をいい、書類についてはその作成"
+                                 "又は受領の日の属する事業年度終了の日の翌日から"
+                                 "二月を経過した日をいう。")
+     :rule/extended-provision "法人税法施行規則 第二十六条の三第一項"
+     :rule/extended-quote (str "…第五十九条第二項に規定する起算日から十年間、"
+                               "これを納税地…に保存しなければならない。")
+     :rule/basis-months 2
+     :rule/retrieved-at "2026-08-18"
+     :rule/sources [:jp/hojinzei-kisoku :jp/hojinzei-ho :jp/nta-5930]}
 
     ;; The one rule here whose STATUTORY TEXT was read, not just cited.
     ;; 電子帳簿保存法 第七条, retrieved 2026-08-17 from the e-Gov law API
@@ -427,6 +460,122 @@
   not read that as zero."
   [j]
   (get-in jurisdictions [(normalize j) :jurisdiction/retention :rule/years]))
+
+(defn- js-or-parse [x]
+  #?(:clj (Long/parseLong x) :cljs (js/parseInt x 10)))
+
+(defn- leap? [y] (and (zero? (mod y 4)) (or (pos? (mod y 100)) (zero? (mod y 400)))))
+
+(defn- days-in-month [y m]
+  (case (long m) 1 31 2 (if (leap? y) 29 28) 3 31 4 30 5 31 6 30
+        7 31 8 31 9 30 10 31 11 30 12 31 nil))
+
+(defn- parse-date
+  "\"YYYY-MM-DD\" -> `{:y :m :d}`, or nil. Rejects an impossible day rather
+  than rolling it forward — 2026-02-30 is a data error, not February 30th."
+  [s]
+  (when (string? s)
+    (when-let [[_ y m d] (re-matches #"(\d{4})-(\d{2})-(\d{2})" s)]
+      (let [y (js-or-parse y) m (js-or-parse m) d (js-or-parse d)]
+        (when (and (<= 1 m 12) (<= 1 d (days-in-month y m)))
+          {:y y :m m :d d})))))
+
+(defn- fmt [{:keys [y m d]}]
+  (str y "-" (when (< m 10) "0") m "-" (when (< d 10) "0") d))
+
+(defn- add-months
+  "Calendar month addition, clamping an overflowing day to the month end.
+
+  Returns `[date clamped?]`. The clamp is a CONVENTION THIS LIBRARY CHOSE,
+  not something 第五十九条第二項 states: adding two months to 12-31 has no
+  literal answer. The flag is returned rather than swallowed so a caller can
+  see that a convention was applied to its particular date."
+  [{:keys [y m d]} n]
+  (let [t (+ (dec m) n)
+        y' (+ y (quot t 12))
+        m' (inc (mod t 12))
+        dim (days-in-month y' m')
+        clamped? (> d dim)]
+    [{:y y' :m m' :d (min d dim)} clamped?]))
+
+(defn- add-days-1 [{:keys [y m d]}]
+  (let [dim (days-in-month y m)]
+    (if (< d dim)
+      {:y y :m m :d (inc d)}
+      (if (= m 12) {:y (inc y) :m 1 :d 1} {:y y :m (inc m) :d 1}))))
+
+(defn retention
+  "How long must this fiscal year's books and documents be kept, and from when?
+
+  Four-valued, like `withholding-obligation`, and for the same reason — the
+  article's own scope is narrower than \"a company\":
+
+    {:taxlaw/coverage :none}          nobody catalogued this jurisdiction
+    {:taxlaw/coverage :not-declared}  no fiscal-year end, or filing status
+                                      unstated — nothing was asserted
+    {:taxlaw/coverage :out-of-scope}  not a 青色申告法人. 第五十九条 binds
+                                      them and nobody else; 白色申告 is
+                                      governed by provisions NOT READ here,
+                                      so this is not a finding that no
+                                      obligation exists
+    {:taxlaw/coverage :checked ...}   with :retain-from and :retain-years
+
+  `:retain-from` is 起算日 per 第五十九条第二項: the day after the fiscal
+  year ends, plus two months. NOT the transaction date, which is what a
+  flat \"keep receipts seven years\" reading gets wrong.
+
+  `:retain-years` is 10 rather than 7 when `:loss-carryforward?` is true
+  (第二十六条の三第一項).
+
+  ## Two things it declines to resolve
+
+  `:date-convention :clamped-to-month-end` appears when adding two months
+  overflowed the day — 12-31 plus two months has no literal answer, and the
+  clamp is this library's choice, not the article's.
+
+  There is deliberately **no `:retain-until`**. 「七年間」 from a date does
+  not say whether the final day is inside or outside the period, and that is
+  a counting convention the text does not settle. Emitting a specific last
+  day would make a guess look like a rule. `:retain-years` and
+  `:retain-from` are what the article actually gives."
+  [j {:keys [fiscal-year-end blue-return? loss-carryforward? filing-extension-months]}]
+  (let [path (normalize j)
+        facet (get-in jurisdictions [path :jurisdiction/retention])]
+    (cond
+      (not (covered? path))
+      {:taxlaw/coverage :none :taxlaw/unchecked [path]}
+
+      (or (nil? blue-return?) (nil? fiscal-year-end))
+      {:taxlaw/coverage :not-declared
+       :taxlaw/why (if (nil? fiscal-year-end)
+                     "no fiscal-year end declared"
+                     "filing status (青色申告) not declared")}
+
+      (false? blue-return?)
+      {:taxlaw/coverage :out-of-scope
+       :taxlaw/read-provision (:rule/provision facet)
+       :taxlaw/why (str "第五十九条 binds 青色申告法人; other filing statuses are "
+                        "governed by provisions this catalog has not read")}
+
+      :else
+      (if-let [fye (parse-date fiscal-year-end)]
+        (let [[from clamped?] (add-months (add-days-1 fye)
+                                          (+ (:rule/basis-months facet)
+                                             (or filing-extension-months 0)))]
+          (cond-> {:taxlaw/coverage :checked
+                   :taxlaw/jurisdiction path
+                   :taxlaw/retain-from (fmt from)
+                   :taxlaw/retain-years (if loss-carryforward?
+                                          (:rule/years-with-loss-carryforward facet)
+                                          (:rule/years facet))
+                   :taxlaw/provision (if loss-carryforward?
+                                       (:rule/extended-provision facet)
+                                       (:rule/provision facet))
+                   :taxlaw/basis-date-provision (:rule/basis-date-provision facet)}
+            clamped? (assoc :taxlaw/date-convention :clamped-to-month-end)))
+        {:taxlaw/coverage :not-declared
+         :taxlaw/why (str "fiscal-year end is not a valid YYYY-MM-DD: "
+                          (pr-str fiscal-year-end))}))))
 
 (defn credit-support
   "Does `document` support an input-tax credit claim in `jurisdiction`?
