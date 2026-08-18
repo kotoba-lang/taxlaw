@@ -437,3 +437,88 @@
   (is (not (taxlaw/adjusted? [:atlantis]
                              (assoc jp-year-end :year-end-adjustment-settled? true))))
   (is (not (taxlaw/adjusted? [:jp] {:year-end-adjustment-settled? true}))))
+
+;; ---------------------------------------------------------------------------
+;; 法人税法施行規則 第五十九条 — retention, read rather than assumed
+;; ---------------------------------------------------------------------------
+
+(deftest the-retention-rule-is-now-read-not-merely-cited
+  (let [r (get-in taxlaw/jurisdictions [[:jp] :jurisdiction/retention])]
+    (is (= :read-from-source (:rule/review r))
+        "it is consulted by `retention`, so citing it was not enough")
+    (is (= "法人税法施行規則 第五十九条" (:rule/provision r)))
+    (is (str/includes? (:rule/quote r) "起算日から七年間"))
+    (is (str/includes? (:rule/basis-date-quote r) "二月を経過した日"))
+    (is (str/includes? (:rule/extended-quote r) "十年間"))
+    (testing "the article's own scope is recorded, not widened"
+      (is (= :blue-return-corporation (:rule/binds r))))
+    (testing "seven is not the only number in the text"
+      (is (= 7 (:rule/years r)))
+      (is (= 10 (:rule/years-with-loss-carryforward r))))))
+
+(def ^:private mar-fye {:fiscal-year-end "2026-03-31" :blue-return? true})
+
+(deftest retention-is-four-valued
+  (testing "uncatalogued jurisdiction"
+    (let [r (taxlaw/retention [:atlantis] mar-fye)]
+      (is (= :none (:taxlaw/coverage r)))
+      (is (not (contains? r :taxlaw/retain-years)))))
+
+  (testing "nothing asserted"
+    (is (= :not-declared (:taxlaw/coverage (taxlaw/retention [:jp] {:blue-return? true}))))
+    (is (= :not-declared (:taxlaw/coverage (taxlaw/retention [:jp] {:fiscal-year-end "2026-03-31"})))
+        "silence about filing status is not a claim to be 青色申告"))
+
+  (testing "out of scope is NOT a finding that no obligation exists"
+    (let [r (taxlaw/retention [:jp] {:fiscal-year-end "2026-03-31" :blue-return? false})]
+      (is (= :out-of-scope (:taxlaw/coverage r)))
+      (is (not (contains? r :taxlaw/retain-years)))
+      (is (= "法人税法施行規則 第五十九条" (:taxlaw/read-provision r))
+          "it names the provision that was read, so a caller can see what
+           was NOT read")))
+
+  (testing "checked"
+    (let [r (taxlaw/retention [:jp] mar-fye)]
+      (is (= :checked (:taxlaw/coverage r)))
+      (is (= 7 (:taxlaw/retain-years r))))))
+
+(deftest the-clock-starts-at-起算日-not-the-transaction-date
+  (testing "第五十九条第二項: the day after the fiscal year ends, plus two months"
+    (is (= "2026-06-01" (:taxlaw/retain-from (taxlaw/retention [:jp] mar-fye)))
+        "FY ends 2026-03-31 -> 04-01 -> +2 months")
+    (is (= "2027-03-01" (:taxlaw/retain-from
+                         (taxlaw/retention [:jp] {:fiscal-year-end "2026-12-31"
+                                                  :blue-return? true})))))
+  (testing "a filing extension moves it, per 第二項第一号"
+    (is (= "2026-08-01" (:taxlaw/retain-from
+                         (taxlaw/retention [:jp] (assoc mar-fye :filing-extension-months 2)))))))
+
+(deftest carrying-a-loss-forward-makes-it-ten
+  (let [r (taxlaw/retention [:jp] (assoc mar-fye :loss-carryforward? true))]
+    (is (= 10 (:taxlaw/retain-years r)))
+    (is (= "法人税法施行規則 第二十六条の三第一項" (:taxlaw/provision r)))))
+
+(deftest a-clamped-date-says-so
+  (testing "adding two months to 12-30 has no literal answer; the clamp is
+            this library's convention and must be visible"
+    (let [r (taxlaw/retention [:jp] {:fiscal-year-end "2026-12-30" :blue-return? true})]
+      (is (= "2027-02-28" (:taxlaw/retain-from r)))
+      (is (= :clamped-to-month-end (:taxlaw/date-convention r)))))
+  (testing "and an ordinary date does not claim a convention was applied"
+    (is (not (contains? (taxlaw/retention [:jp] mar-fye) :taxlaw/date-convention)))))
+
+(deftest there-is-deliberately-no-retain-until
+  (testing "七年間 from a date does not say whether the last day is inside
+            the period; emitting one would make a guess look like a rule"
+    (is (not (contains? (taxlaw/retention [:jp] mar-fye) :taxlaw/retain-until)))))
+
+(deftest an-impossible-fiscal-year-end-is-refused-not-rolled-forward
+  (doseq [bad ["2026-02-30" "2026-13-01" "26-03-31" "2026/03/31" "" nil]]
+    (is (= :not-declared (:taxlaw/coverage (taxlaw/retention [:jp] {:fiscal-year-end bad
+                                                                    :blue-return? true})))
+        (str "should refuse " (pr-str bad)))))
+
+(deftest a-leap-day-fiscal-year-end-works
+  (is (= "2028-04-29" (:taxlaw/retain-from
+                       (taxlaw/retention [:jp] {:fiscal-year-end "2028-02-28"
+                                                :blue-return? true})))))
