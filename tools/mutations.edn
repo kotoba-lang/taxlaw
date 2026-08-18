@@ -1,0 +1,107 @@
+;; One mutation per invariant. `:find` must occur EXACTLY ONCE in `:file` —
+;; `tools/mutate.cljs` refuses otherwise, because a mutation that landed in a
+;; comment or in a second call site produces a red suite that proves nothing.
+;;
+;; ## SCOPE — this table does not cover the whole library
+;;
+;; It covers the 検索要件 pair: `book-search` (規則第五条第五項第一号ハ) and
+;; `electronic-transaction-search` (規則第二条第六項第五号 as imported by
+;; 第四条第一項). The invoice, retention, preservation, withholding and
+;; year-end-adjustment facets have suites but no mutations here, so a clean
+;; run of this table means "every invariant of the SEARCH pair is measured"
+;; and NOT "every invariant of taxlaw is measured". Reading it as the second
+;; would be the defect the harness exists to catch: a check that did not look
+;; reporting the same value as one that looked and found nothing.
+;;
+;; The invariants worth breaking here are almost all about REFUSING to
+;; answer. A compliance library whose unknown-input path returns the same
+;; value as its everything-checked path is one nobody can act on.
+[{:id :undeclared-claim-is-not-a-pass
+  :invariant "books that do not say whether they claim 法第八条第四項 get :not-declared"
+  :file "src/kotoba/taxlaw.cljc"
+  :find "      (nil? (:claiming-preferential-treatment? books))\n      {:taxlaw/coverage :not-declared"
+  :replace "      (nil? (:claiming-preferential-treatment? nil))\n      {:taxlaw/coverage :not-declared"}
+
+ {:id :not-claiming-is-not-satisfying
+  :invariant "`the rule does not reach you` is not `you satisfy the rule`"
+  :file "src/kotoba/taxlaw.cljc"
+  :find "       :taxlaw/search-required? false\n       :taxlaw/adequate? nil"
+  :replace "       :taxlaw/search-required? false\n       :taxlaw/adequate? true"}
+
+ {:id :all-three-record-items-are-required
+  :invariant "取引年月日・取引金額・取引先 — every one of them"
+  :file "src/kotoba/taxlaw.cljc"
+  :find "           (not (every? items (:rule/record-items rule))))"
+  :replace "           (not (some items (:rule/record-items rule))))"}
+
+ {:id :range-is-its-own-requirement
+  :invariant "（２）範囲指定 is checked separately from （１）"
+  :file "src/kotoba/taxlaw.cljc"
+  :find "      (and (contains? required :range) (not (true? range-search?)))"
+  :replace "      (and (contains? required :range) (not (some? range-search?)))"}
+
+ {:id :combination-is-its-own-requirement
+  :invariant "（３）二以上の組合せ is checked separately"
+  :file "src/kotoba/taxlaw.cljc"
+  :find "      (and (contains? required :combination) (not (true? combination-search?)))"
+  :replace "      (and (contains? required :combination) (not (some? combination-search?)))"}
+
+ {:id :on-demand-is-the-gate-for-both-exemptions
+  :invariant "unstated on-demand capability is :not-declared, not a tier"
+  :file "src/kotoba/taxlaw.cljc"
+  :find "      (nil? (:can-produce-on-demand? setup))\n      {:taxlaw/coverage :not-declared"
+  :replace "      (nil? (:can-produce-on-demand? nil))\n      {:taxlaw/coverage :not-declared"}
+
+ {:id :on-demand-does-not-drop-the-record-items
+  :invariant "the exemption drops ロ and ハ; イ stands"
+  :file "src/kotoba/taxlaw.cljc"
+  :find "                           on-demand? #{:items}"
+  :replace "                           on-demand? #{}"}
+
+ {:id :without-on-demand-all-three-are-required
+  :invariant "no exemption means イ ロ ハ all apply"
+  :file "src/kotoba/taxlaw.cljc"
+  :find "                           :else #{:items :range :combination})"
+  :replace "                           :else #{:items})"}
+
+ {:id :the-wider-exemption-needs-on-demand-too
+  :invariant "small sales alone does not drop 第五号 — 提示等 is required with it"
+  :file "src/kotoba/taxlaw.cljc"
+  :find "            wider (cond (not on-demand?) false"
+  :replace "            wider (cond (not on-demand?) (or (true? small) (true? paper))"}
+
+ {:id :the-sales-ceiling-is-inclusive
+  :invariant "「五千万円以下」 — exactly the ceiling is inside it"
+  :file "src/kotoba/taxlaw.cljc"
+  :find "small (cond (number? sales) (<= sales ceiling) :else nil)"
+  :replace "small (cond (number? sales) (< sales ceiling) :else nil)"}
+
+ {:id :an-unstated-deciding-fact-is-not-a-failure
+  :invariant "`you fail` and `you did not state the fact that decides it` differ"
+  :file "src/kotoba/taxlaw.cljc"
+  :find "        (if (and (seq missing) (nil? wider))"
+  :replace "        (if (and (seq missing) (some? wider))"}
+
+ {:id :refusing-to-conclude-still-informs
+  :invariant ":not-declared still names what is missing"
+  :file "src/kotoba/taxlaw.cljc"
+  :find "           :taxlaw/missing missing\n           :taxlaw/provision (:rule/provision rule)}"
+  :replace "           :taxlaw/missing #{}\n           :taxlaw/provision (:rule/provision rule)}"}
+
+ {:id :the-book-rule-is-not-an-unconditional-duty
+  :invariant "requires-book-search? answers with the condition, not `true`"
+  :file "src/kotoba/taxlaw.cljc"
+  :find "    {:rule/required-only-when :claiming-preferential-treatment"
+  :replace "    {:rule/required-only-when true"}
+
+ {:id :the-two-regimes-quote-different-text
+  :invariant "帳簿 has no 「その他の日付」 and no sales ceiling"
+  :file "src/kotoba/taxlaw.cljc"
+  :find "     :rule/quote (str \"ハ当該国税関係帳簿に係る電磁的記録の記録事項の検索を\""
+  :replace "     :rule/small-holder-sales-ceiling-yen 50000000\n     :rule/quote (str \"ハ当該国税関係帳簿に係る電磁的記録の記録事項の検索をその他の日付を\""}
+
+ {:id :the-conservative-boolean-stays-conservative
+  :invariant "book-search-adequate? is false for :none and :not-declared"
+  :file "src/kotoba/taxlaw.cljc"
+  :find "  (true? (:taxlaw/adequate? (book-search j books))))"
+  :replace "  (not (false? (:taxlaw/adequate? (book-search j books)))))"}]
