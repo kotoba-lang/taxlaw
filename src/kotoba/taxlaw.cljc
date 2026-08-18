@@ -103,6 +103,13 @@
     :law/id "363AC0000000108"
     :source/url "https://laws.e-gov.go.jp/law/363AC0000000108"}
 
+   :jp/shohizei-rei
+   {:source/title "消費税法施行令"
+    :source/authority "日本国 / e-Gov 法令検索"
+    :source/kind :statute
+    :law/id "363CO0000000360"
+    :source/url "https://laws.e-gov.go.jp/law/363CO0000000360"}
+
    :jp/hojinzei-kisoku
    {:source/title "法人税法施行規則"
     :source/authority "日本国 / e-Gov 法令検索"
@@ -211,7 +218,23 @@
                  "保存義務者は、電子取引を行った場合には、財務省令で定める"
                  "ところにより、当該電子取引の取引情報に係る電磁的記録を"
                  "保存しなければならない。")}
-    {:claim :book-search-function-for-preferential-treatment
+    {:claim :qualified-invoice-tax-amount-calculation
+     :source :jp/shohizei-rei
+     :provision "消費税法施行令 第七十条の十"
+     :retrieved-via "e-Gov law API v2 GET /api/2/law_data/363CO0000000360"
+     :retrieved-at "2026-08-18"
+     :quote (str "法第五十七条の四第一項第五号に規定する政令で定める方法は、"
+                 "次の各号に掲げる方法のいずれかとする。この場合において、"
+                 "当該各号に掲げる方法により算出した金額に一円未満の端数が"
+                 "生じたときは、当該端数を処理するものとする。一法第五十七条の四"
+                 "第一項第四号に規定する課税資産の譲渡等に係る税抜価額を税率の"
+                 "異なるごとに区分して合計した金額に百分の十（当該合計した金額が"
+                 "軽減対象課税資産の譲渡等に係るものである場合には、百分の八）を"
+                 "乗じて算出する方法二法第五十七条の四第一項第四号に規定する"
+                 "課税資産の譲渡等に係る税込価額を税率の異なるごとに区分して"
+                 "合計した金額に百十分の十（当該合計した金額が軽減対象課税資産の"
+                 "譲渡等に係るものである場合には、百八分の八）を乗じて算出する方法")}
+   {:claim :book-search-function-for-preferential-treatment
      :source :jp/dencho-kisoku
      :provision "電子帳簿保存法施行規則 第五条第五項第一号ハ"
      :retrieved-via "e-Gov law API v2 GET /api/2/law_data/410M50000040043"
@@ -359,6 +382,52 @@
      :rule/retrieved-at "2026-08-17"
      :rule/applies-to #{:income-tax :corporation-tax}
      :rule/sources [:jp/dencho-ho :jp/dencho-kisoku]}
+
+    ;; 適格請求書に記載すべき消費税額等の計算 — read, not merely cited.
+    ;; 消費税法施行令 第七十条の十, retrieved 2026-08-18 from
+    ;; `GET /api/2/law_data/363CO0000000360`.
+    ;;
+    ;; ## Three things the text settles that a naive implementation gets wrong
+    ;;
+    ;; 1. **The multiplication is on the per-rate SUBTOTAL, not per line.**
+    ;;    「税率の異なるごとに区分して合計した金額に…を乗じて」— sum first,
+    ;;    then multiply. Taxing each line and adding the results is a third
+    ;;    method, and the article offers exactly two.
+    ;; 2. **The rounding happens once, on that one figure.** 「当該各号に
+    ;;    掲げる方法により算出した金額に一円未満の端数が生じたときは、当該
+    ;;    端数を処理するものとする」.
+    ;; 3. **The article does not say which way to round.** 処理する, not
+    ;;    切り捨てる. The issuer picks, so this library refuses to.
+    ;;
+    ;; 消費税額等 is defined upstream (施行令 第四十五条) as 消費税額 plus the
+    ;; 地方消費税額 computed on it, so the 十 in 百分の十 is the combined
+    ;; figure and no separate local-tax step belongs here.
+    :jurisdiction/qualified-invoice-tax-amount
+    {:rule/review :read-from-source
+     :rule/provision "消費税法施行令 第七十条の十"
+     :rule/quote (str "法第五十七条の四第一項第五号に規定する政令で定める方法は、"
+                      "次の各号に掲げる方法のいずれかとする。この場合において、"
+                      "当該各号に掲げる方法により算出した金額に一円未満の端数が"
+                      "生じたときは、当該端数を処理するものとする。")
+     :rule/quote-is-partial? true
+     :rule/quote-omits "第一号・第二号（二つの算出方法の本文）— :rule/methods に転記"
+     :rule/retrieved-at "2026-08-18"
+     :rule/retrieved-via "e-Gov law API v2 GET /api/2/law_data/363CO0000000360"
+     ;; The two methods, as numerator/denominator pairs read off the text.
+     ;; Exact integers, so nothing here goes through a float.
+     :rule/methods
+     {:tax-exclusive {:statute "第一号（税抜価額）"
+                      :standard [10 100] :reduced [8 100]}
+      :tax-inclusive {:statute "第二号（税込価額）"
+                      :standard [10 110] :reduced [8 108]}}
+     :rule/tax-categories #{:standard :reduced}
+     ;; 「端数を処理する」— the article names no direction, so neither does
+     ;; this catalog. These are the choices a caller may state.
+     :rule/rounding-policies #{:floor :ceil :round-half-up}
+     :rule/rounding-is-issuers-choice? true
+     ;; Once per rate, on the subtotal — NOT per line.
+     :rule/rounds-per :tax-category-subtotal
+     :rule/sources [:jp/shohizei-ho :jp/shohizei-rei :jp/nta-invoice]}
 
     ;; 検索要件 — read, not merely cited. 電子帳簿保存法施行規則, retrieved
     ;; 2026-08-18 from `GET /api/2/law_data/410M50000040043` (revision
@@ -786,6 +855,131 @@
   because neither established that the record is preserved."
   [j document]
   (true? (:taxlaw/preserved? (record-preservation j document))))
+
+;; ---------------------------------------------------------------------------
+;; 消費税額等 — 消費税法施行令 第七十条の十
+;; ---------------------------------------------------------------------------
+
+(defn- round-exact
+  "`num`/`den` as an integer under `policy`. Exact integer arithmetic — no
+  float ever holds a tax figure here.
+
+  Refuses a negative numerator by returning nil rather than rounding it:
+  `quot` truncates toward zero, so `:floor` on a negative would round UP and
+  do it silently. A 返還インボイス is a real thing and this article is not
+  the one that governs it."
+  [num den policy]
+  (when (and (integer? num) (>= num 0) (pos? den))
+    (let [q (quot num den) r (rem num den)]
+      (cond (zero? r) q
+            (= :floor policy) q
+            (= :ceil policy) (inc q)
+            (= :round-half-up policy) (if (>= (* 2 r) den) (inc q) q)))))
+
+(defn consumption-tax-amount
+  "The 消費税額等 to write on a 適格請求書, per 消費税法施行令 第七十条の十.
+
+  `invoice` states the three things the article leaves to the issuer:
+
+      {:method :tax-exclusive | :tax-inclusive     第一号 / 第二号
+       :rounding :floor | :ceil | :round-half-up   「端数を処理する」
+       :subtotals {:standard n :reduced n}}        税率の異なるごとに
+                                                   区分して合計した金額
+
+  ## The shape of `:subtotals` is the point
+
+  The article multiplies **the per-rate subtotal**, once, and rounds **that
+  one figure**, once. Taxing each line and summing the results is a third
+  method and the article offers two. This function therefore takes subtotals
+  and cannot be handed lines — a caller holding lines must group them, which
+  is where the grouping decision belongs and where it can be seen.
+
+  ## What it refuses
+
+    {:taxlaw/coverage :none}          uncatalogued jurisdiction
+    {:taxlaw/coverage :not-declared}  the invoice does not state the method,
+                                      or does not state the rounding, or
+                                      names a tax category the article does
+                                      not. **Not a pass, and not a zero.**
+    {:taxlaw/coverage :checked ...}   `:taxlaw/tax-by-category` and
+                                      `:taxlaw/tax` — the sum of the
+                                      per-category figures, each already
+                                      rounded once
+
+  Neither the method nor the rounding is defaulted. 「いずれかとする」 and
+  「端数を処理するものとする」 are both choices the article hands the issuer,
+  and a library that picks one has answered a question it was not asked —
+  by ¥1 per rate, on every invoice, forever."
+  [j invoice]
+  (let [path (normalize j)
+        rule (get-in jurisdictions [path :jurisdiction/qualified-invoice-tax-amount])
+        {:keys [method rounding subtotals]} invoice
+        methods (:rule/methods rule)
+        known (:rule/tax-categories rule)]
+    (cond
+      (or (not (covered? path)) (nil? rule))
+      {:taxlaw/coverage :none :taxlaw/unchecked [path]}
+
+      (nil? (get methods method))
+      {:taxlaw/coverage :not-declared
+       :taxlaw/why (str "the invoice does not state which of the two methods in "
+                        (:rule/provision rule) " it uses"
+                        (when (some? method) (str "; got " (pr-str method))))
+       :taxlaw/choices (set (keys methods))
+       :taxlaw/provision (:rule/provision rule)}
+
+      (not (contains? (:rule/rounding-policies rule) rounding))
+      {:taxlaw/coverage :not-declared
+       :taxlaw/why (str "the article says 端数を処理する and does not say which "
+                        "way; the issuer must state it"
+                        (when (some? rounding) (str "; got " (pr-str rounding))))
+       :taxlaw/choices (:rule/rounding-policies rule)
+       :taxlaw/provision (:rule/provision rule)}
+
+      (not (map? subtotals))
+      {:taxlaw/coverage :not-declared
+       :taxlaw/why "no per-rate subtotals were given"
+       :taxlaw/provision (:rule/provision rule)}
+
+      (seq (remove known (keys subtotals)))
+      {:taxlaw/coverage :not-declared
+       :taxlaw/why (str "the article names 標準 and 軽減 and this catalog has "
+                        "read no other; refusing to treat an unknown category "
+                        "as either")
+       :taxlaw/unknown-categories (set (remove known (keys subtotals)))
+       :taxlaw/provision (:rule/provision rule)}
+
+      :else
+      (let [by-cat (reduce (fn [acc [cat amount]]
+                             (let [[n d] (get-in methods [method cat])]
+                               (assoc acc cat (round-exact (* amount n) d rounding))))
+                           {} subtotals)]
+        (if (some nil? (vals by-cat))
+          {:taxlaw/coverage :not-declared
+           :taxlaw/why (str "a subtotal is not a non-negative integer; this "
+                            "article governs 適格請求書 and not 返還インボイス, "
+                            "and rounding a negative would silently go the "
+                            "other way")
+           :taxlaw/rejected (set (keep (fn [[c v]] (when (nil? v) c)) by-cat))
+           :taxlaw/provision (:rule/provision rule)}
+          {:taxlaw/coverage :checked
+           :taxlaw/jurisdiction path
+           :taxlaw/method method
+           :taxlaw/method-statute (get-in methods [method :statute])
+           :taxlaw/rounding rounding
+           :taxlaw/tax-by-category by-cat
+           :taxlaw/tax (reduce + 0 (vals by-cat))
+           :taxlaw/rounds-per (:rule/rounds-per rule)
+           :taxlaw/provision (:rule/provision rule)})))))
+
+(defn consumption-tax
+  "The single figure from `consumption-tax-amount`, or **nil** when it
+  refused. Conservative like `preserved?` — but nil rather than false,
+  because 0 is a real tax amount and must not be what `could not answer`
+  looks like."
+  [j invoice]
+  (let [r (consumption-tax-amount j invoice)]
+    (when (= :checked (:taxlaw/coverage r)) (:taxlaw/tax r))))
 
 ;; ---------------------------------------------------------------------------
 ;; 検索要件 — 規則第五条第五項第一号ハ (帳簿) and 規則第二条第六項第五号 (電子取引)

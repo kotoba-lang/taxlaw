@@ -138,6 +138,41 @@ nothing was asserted and nothing was checked. Printing an electronic
 transaction and keeping the paper is the case the article addresses: the
 obligation is to preserve the 電磁的記録 itself.
 
+## 消費税額等 — 施行令 第七十条の十, and the ¥1 nobody notices
+
+消費税法施行令 第七十条の十, read 2026-08-18 from
+`GET /api/2/law_data/363CO0000000360`. The article settles three things that a
+naive implementation gets wrong, and it is worth naming them because getting
+any of them wrong produces an invoice that looks completely normal:
+
+1. **The multiplication is on the per-rate subtotal, not per line.**
+   「税率の異なるごとに区分して合計した金額に…を乗じて」— sum first, then
+   multiply. Taxing each line and adding the results is a *third* method, and
+   the article offers exactly two. `consumption-tax-amount` therefore takes
+   `:subtotals`, not lines: **a caller holding lines has to group them, which
+   is where the grouping decision belongs and where it can be seen.** A test
+   shows a case where the two disagree by ¥2 on ¥999.
+2. **The rounding happens once, on that one figure.**
+3. **The article does not say which way to round.** 処理する, not 切り捨てる.
+
+So neither the method (`:tax-exclusive` 第一号 / `:tax-inclusive` 第二号) nor
+the rounding (`:floor` / `:ceil` / `:round-half-up`) is defaulted. Both are
+`:not-declared`, with `:taxlaw/choices` naming what the caller may state. **A
+library that picks one is wrong by ¥1 per rate, on every invoice, forever, and
+nothing in its output says so.**
+
+The four rate pairs are read off the text as exact integers — 税抜 10/100 and
+8/100, 税込 10/110 and 8/108 — and no float ever holds a tax figure. 消費税額等
+already includes the 地方消費税 by its own definition (施行令 第四十五条), so
+there is no separate local-tax step.
+
+Two refusals worth their own line: a tax category the article does not name is
+refused rather than treated as 標準, and **a negative subtotal is refused
+rather than rounded backwards** — `quot` truncates toward zero, so `:floor` on
+a negative rounds *up* and does it silently. 返還インボイス is governed
+elsewhere and this article is not it. Meanwhile an empty invoice returns a real
+`0`, distinguishable from the `nil` that means *could not answer*.
+
 ## 検索要件 — two regimes, and neither of them is a plain duty
 
 電子帳簿保存法施行規則, read 2026-08-18 from `GET /api/2/law_data/410M50000040043`
