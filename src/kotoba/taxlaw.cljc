@@ -103,6 +103,32 @@
     :law/id "363AC0000000108"
     :source/url "https://laws.e-gov.go.jp/law/363AC0000000108"}
 
+   ;; Non-JP instruments. These have NO `:law/id` because they are not in
+   ;; the e-Gov corpus, and `:source/corpus` says which corpus (if any) can
+   ;; verify them. `tools/verify_citations.cljs` counts them as their own
+   ;; class rather than skipping them silently — a citation nobody could
+   ;; check must not be indistinguishable from one that checked out.
+   :eu/vat-directive
+   {:source/title "Council Directive 2006/112/EC on the common system of value added tax"
+    :source/authority "European Union / EUR-Lex"
+    :source/kind :statute
+    :source/corpus :none
+    :celex/id "32006L0112"
+    :source/url "https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32006L0112"
+    ;; The plain eur-lex.europa.eu URL above is for a human. It answers HTTP
+    ;; 202 with an empty body to a fetch. What actually serves the text:
+    :source/retrieval-url "http://publications.europa.eu/resource/celex/32006L0112"
+    :source/retrieval-note "requires Accept: application/xhtml+xml and Accept-Language: eng; Accept: text/html 404s"}
+
+   :us/cfr-26-1-6001-1
+   {:source/title "26 CFR § 1.6001-1 Records"
+    :source/authority "United States / eCFR (National Archives)"
+    :source/kind :statute
+    :source/corpus :none
+    :cfr/cite "26 CFR 1.6001-1"
+    :source/url "https://www.ecfr.gov/current/title-26/section-1.6001-1"
+    :source/retrieval-url "https://www.ecfr.gov/api/versioner/v1/full/2026-01-01/title-26.xml?part=1&section=1.6001-1"}
+
    :jp/shohizei-rei
    {:source/title "消費税法施行令"
     :source/authority "日本国 / e-Gov 法令検索"
@@ -218,7 +244,63 @@
                  "保存義務者は、電子取引を行った場合には、財務省令で定める"
                  "ところにより、当該電子取引の取引情報に係る電磁的記録を"
                  "保存しなければならない。")}
-    {:claim :qualified-invoice-tax-amount-calculation
+    {:claim :eu-invoice-required-details
+     :source :eu/vat-directive
+     :provision "Directive 2006/112/EC, Article 226"
+     :retrieved-via "CELLAR GET http://publications.europa.eu/resource/celex/32006L0112 (Accept: application/xhtml+xml)"
+     :retrieved-at "2026-08-18"
+     :quote (str "Without prejudice to the particular provisions laid down in "
+                 "this Directive, only the following details are required for "
+                 "VAT purposes on invoices issued pursuant to Articles 220 and "
+                 "221: (1) the date of issue; (2) a sequential number, based on "
+                 "one or more series, which uniquely identifies the invoice; "
+                 "(3) the VAT identification number referred to in Article 214 "
+                 "under which the taxable person supplied the goods or services;")
+     :quote-is-partial? true
+     :quote-omits "points (4)-(15)"}
+    {:claim :eu-vat-identification-number-prefix
+     :source :eu/vat-directive
+     :provision "Directive 2006/112/EC, Article 215"
+     :retrieved-via "CELLAR GET http://publications.europa.eu/resource/celex/32006L0112 (Accept: application/xhtml+xml)"
+     :retrieved-at "2026-08-18"
+     :quote (str "Each individual VAT identification number shall have a prefix "
+                 "in accordance with ISO code 3166 — alpha 2 — by which the "
+                 "Member State of issue may be identified. Nevertheless, Greece "
+                 "may use the prefix \u2018EL\u2019.")}
+    {:claim :eu-invoice-storage-period-is-not-set-by-the-directive
+     :source :eu/vat-directive
+     :provision "Directive 2006/112/EC, Article 247(1)"
+     :retrieved-via "CELLAR GET http://publications.europa.eu/resource/celex/32006L0112 (Accept: application/xhtml+xml)"
+     :retrieved-at "2026-08-18"
+     :quote (str "Each Member State shall determine the period throughout which "
+                 "taxable persons must ensure the storage of invoices relating "
+                 "to the supply of goods or services in its territory and "
+                 "invoices received by taxable persons established in its "
+                 "territory.")}
+    {:claim :eu-electronic-invoices-must-be-accepted
+     :source :eu/vat-directive
+     :provision "Directive 2006/112/EC, Articles 218 and 246"
+     :retrieved-via "CELLAR GET http://publications.europa.eu/resource/celex/32006L0112 (Accept: application/xhtml+xml)"
+     :retrieved-at "2026-08-18"
+     :quote (str "Member States shall accept documents or messages on paper or "
+                 "in electronic form as invoices if they meet the conditions "
+                 "laid down in this Chapter. … The authenticity of the origin "
+                 "and the integrity of the content of the invoices stored, as "
+                 "well as their legibility, must be guaranteed throughout the "
+                 "storage period.")
+     :quote-is-partial? true
+     :quote-omits "Article 219 through 245, between the two sentences"}
+    {:claim :us-record-retention-states-no-period
+     :source :us/cfr-26-1-6001-1
+     :provision "26 CFR § 1.6001-1(e)"
+     :retrieved-via "eCFR GET /api/versioner/v1/full/2026-01-01/title-26.xml?part=1&section=1.6001-1"
+     :retrieved-at "2026-08-18"
+     :quote (str "The books or records required by this section shall be kept "
+                 "at all times available for inspection by authorized internal "
+                 "revenue officers or employees, and shall be retained so long "
+                 "as the contents thereof may become material in the "
+                 "administration of any internal revenue law.")}
+   {:claim :qualified-invoice-tax-amount-calculation
      :source :jp/shohizei-rei
      :provision "消費税法施行令 第七十条の十"
      :retrieved-via "e-Gov law API v2 GET /api/2/law_data/363CO0000000360"
@@ -581,7 +663,186 @@
      :rule/declaration "給与所得者の扶養控除等申告書"
      ;; 「二千万円以下」 — from the text, not from guidance.
      :rule/income-ceiling-yen 20000000
-     :rule/sources [:jp/shotokuzei-ho]}}})
+     :rule/sources [:jp/shotokuzei-ho]}}
+
+   ;; -------------------------------------------------------------------
+   ;; [:eu] — Council Directive 2006/112/EC
+   ;;
+   ;; A parent path with no member state under it yet, exactly as `worklaw`
+   ;; keys `[:eu]` above `[:eu :fr]` and `[:eu :de]`. That shape is not
+   ;; decoration here: the Directive itself repeatedly hands the answer down
+   ;; ("Each Member State shall determine…"), so a fact recorded at `[:eu]`
+   ;; and a fact recorded at `[:eu :de]` are different kinds of fact and must
+   ;; not be merged.
+   ;; -------------------------------------------------------------------
+   [:eu]
+   {:jurisdiction/path [:eu]
+    :jurisdiction/label "European Union"
+
+    ;; Article 226 is a CLOSED list — "only the following details are
+    ;; required" — and (3) is the supplier's VAT identification number. That
+    ;; is the Union-level analogue of the 適格請求書 registration number, and
+    ;; the reason `requires-qualified-invoice?` is true here.
+    :jurisdiction/input-tax-credit
+    {:rule/requires-qualified-invoice? true
+     :rule/review :read-from-source
+     :rule/provision "Directive 2006/112/EC, Articles 226 and 215"
+     :rule/quote (str "only the following details are required for VAT "
+                      "purposes on invoices issued pursuant to Articles 220 "
+                      "and 221: … (3) the VAT identification number referred "
+                      "to in Article 214 under which the taxable person "
+                      "supplied the goods or services")
+     :rule/quote-is-partial? true
+     :rule/quote-omits "points (1),(2),(4)-(15) of Article 226"
+     :rule/retrieved-at "2026-08-18"
+     :rule/retrieved-via "CELLAR GET http://publications.europa.eu/resource/celex/32006L0112"
+     ;; Article 215: an ISO 3166 alpha-2 prefix, with EL for Greece. That is
+     ;; ALL the Directive says about the shape. The body of the number is
+     ;; Member State law this catalog has not read, so
+     ;; `registration-number-valid?` checks the prefix and NOTHING ELSE —
+     ;; and says so, because a prefix check that reported itself as
+     ;; validation would be the worse failure.
+     ;; Two uppercase letters and then at least one more character. That is
+     ;; the WHOLE of what Article 215 supports: "a prefix in accordance with
+     ;; ISO code 3166 — alpha 2". It does not say the body is numeric, does
+     ;; not give a length, and does not list the Member States — so this
+     ;; pattern checks none of those, and `:rule/registration-format` says so
+     ;; out loud rather than leaving a caller to infer it from a `true`.
+     :rule/registration-number-pattern #"[A-Z]{2}[0-9A-Za-z+*.]+"
+     :rule/registration-format
+     {:kind :iso-3166-alpha-2-prefix
+      :greece-alias "EL"
+      :checked #{:prefix-shape}
+      :not-checked #{:member-state-is-a-member :body-format :check-digit}
+      :body-authority "Member State law, not read"
+      :why (str "Article 215 gives the prefix and nothing else. A pattern that "
+                "also fixed a length or a digit count would be enforcing a "
+                "Member State's rule against every Member State.")}
+     :rule/sources [:eu/vat-directive]}
+
+    ;; Article 247(1): "Each Member State shall determine the period".
+    ;; **The Directive states no number.** A catalog that answered "10 years"
+    ;; here would be repeating folklore, and `retention-years` would hand a
+    ;; caller an integer that no instrument supports. So there is no
+    ;; `:rule/years` — the facet exists, is read, and its content is that the
+    ;; answer lives one level down.
+    :jurisdiction/retention
+    {:rule/years nil
+     :rule/period-set-by :member-state
+     :rule/review :read-from-source
+     :rule/provision "Directive 2006/112/EC, Article 247(1)"
+     :rule/quote (str "Each Member State shall determine the period throughout "
+                      "which taxable persons must ensure the storage of "
+                      "invoices relating to the supply of goods or services in "
+                      "its territory and invoices received by taxable persons "
+                      "established in its territory.")
+     :rule/retrieved-at "2026-08-18"
+     :rule/retrieved-via "CELLAR GET http://publications.europa.eu/resource/celex/32006L0112"
+     :rule/sources [:eu/vat-directive]}
+
+    ;; Article 218 + 246. Note the direction is the OPPOSITE of 電子帳簿保存法
+    ;; 第七条: Japan obliges the holder to preserve an electronic record as
+    ;; such, while the Directive obliges the Member State to ACCEPT electronic
+    ;; form. Both facets are called `:jurisdiction/electronic-transaction` and
+    ;; they do not say the same thing, which is why `record-preservation`
+    ;; reads `:rule/must-preserve-electronic-record?` and finds it absent here
+    ;; rather than inheriting Japan's answer.
+    :jurisdiction/electronic-transaction
+    {:rule/electronic-form-must-be-accepted? true
+     :rule/must-guarantee {:authenticity-of-origin true
+                           :integrity-of-content true
+                           :legibility true}
+     :rule/review :read-from-source
+     :rule/provision "Directive 2006/112/EC, Articles 218, 244 and 246"
+     :rule/quote (str "Member States shall accept documents or messages on "
+                      "paper or in electronic form as invoices if they meet "
+                      "the conditions laid down in this Chapter. … The "
+                      "authenticity of the origin and the integrity of the "
+                      "content of the invoices stored, as well as their "
+                      "legibility, must be guaranteed throughout the storage "
+                      "period.")
+     :rule/quote-is-partial? true
+     :rule/quote-omits "Articles 219-245, between the two sentences"
+     :rule/retrieved-at "2026-08-18"
+     :rule/retrieved-via "CELLAR GET http://publications.europa.eu/resource/celex/32006L0112"
+     :rule/sources [:eu/vat-directive]}
+
+    :jurisdiction/out-of-scope
+    {:jurisdiction/electronic-transaction
+     (str "Articles 218/246 say Member States must ACCEPT electronic invoices "
+          "and that authenticity, integrity and legibility must be guaranteed. "
+          "Whether the HOLDER must keep the electromagnetic record as such is "
+          "handed to the Member State by Article 247(2) and is not read")
+     :jurisdiction/wage-withholding
+     "the Directive is a VAT instrument; payroll withholding is Member State law and is not read"
+     :jurisdiction/year-end-adjustment
+     "Member State law, not read"
+     :jurisdiction/qualified-invoice-tax-amount
+     (str "Article 226(10) requires the VAT amount payable to appear, but the "
+          "rounding method is not fixed by the Directive; no Union-level "
+          "analogue of 施行令 第七十条の十 has been read")
+     :jurisdiction/book-search
+     "no Union-level analogue of 優良帳簿 has been read"
+     :jurisdiction/electronic-transaction-search
+     "no Union-level search requirement has been read"}}
+
+   ;; -------------------------------------------------------------------
+   ;; [:us] — and mostly what the United States does NOT have
+   ;;
+   ;; There is no federal VAT or GST. The consumption taxes that exist are
+   ;; State sales and use taxes, which are fifty-odd separate bodies of law
+   ;; this catalog has not read. So the invoice facet is `:out-of-scope` with
+   ;; that reason, NOT `false` — and `credit-support` therefore answers
+   ;; `:none` here and a claim is held, exactly as it was before the United
+   ;; States was catalogued at all. **Adding a jurisdiction must not widen a
+   ;; pass**, and this is the case that would have.
+   ;; -------------------------------------------------------------------
+   [:us]
+   {:jurisdiction/path [:us]
+    :jurisdiction/label "United States (federal)"
+
+    ;; 26 CFR § 1.6001-1(a) and (e). (e) is the one worth reading twice: it
+    ;; states NO period. "so long as the contents thereof may become material
+    ;; in the administration of any internal revenue law" is a condition, not
+    ;; a number, and the widely-repeated "seven years" appears nowhere in the
+    ;; regulation. `retention-years` is therefore nil here — a caller that
+    ;; wanted an integer has learned the real shape of the rule.
+    :jurisdiction/retention
+    {:rule/years nil
+     :rule/period-set-by :materiality
+     :rule/review :read-from-source
+     :rule/provision "26 CFR § 1.6001-1(a), (e)"
+     :rule/quote (str "any person subject to tax under subtitle A of the Code "
+                      "… shall keep such permanent books of account or "
+                      "records, including inventories, as are sufficient to "
+                      "establish the amount of gross income, deductions, "
+                      "credits, or other matters required to be shown by such "
+                      "person in any return … and shall be retained so long as "
+                      "the contents thereof may become material in the "
+                      "administration of any internal revenue law.")
+     :rule/quote-is-partial? true
+     :rule/quote-omits "paragraph (a)'s parenthetical on qualified State income tax, and paragraphs (b)-(d)"
+     :rule/retrieved-at "2026-08-18"
+     :rule/retrieved-via "eCFR GET /api/versioner/v1/full/2026-01-01/title-26.xml?part=1&section=1.6001-1"
+     :rule/sources [:us/cfr-26-1-6001-1]}
+
+    :jurisdiction/out-of-scope
+    {:jurisdiction/input-tax-credit
+     (str "there is no federal VAT or GST, so no federal analogue of a "
+          "qualified invoice exists; State sales and use taxes are separate "
+          "bodies of law this catalog has not read")
+     :jurisdiction/qualified-invoice-tax-amount
+     "no federal consumption tax to compute"
+     :jurisdiction/electronic-transaction
+     "26 CFR 1.6001-1 does not distinguish electronic from paper records; Rev. Proc. 97-22 was not read"
+     :jurisdiction/wage-withholding
+     "IRC §3402 and 26 CFR 31.3402 were not read"
+     :jurisdiction/year-end-adjustment
+     "the United States has no year-end adjustment; the annual return performs that function, and IRC §6012 was not read"
+     :jurisdiction/book-search
+     "no federal search-function requirement has been read"
+     :jurisdiction/electronic-transaction-search
+     "no federal search-function requirement has been read"}}})
 
 ;; ---------------------------------------------------------------------------
 ;; the API
@@ -595,6 +856,47 @@
   (cond (vector? jurisdiction) jurisdiction
         (nil? jurisdiction) nil
         :else [jurisdiction]))
+
+(defn facet-of
+  "The rules this catalog holds for `j` about facet `f`, or nil.
+
+  **Coverage is per FACET, not per jurisdiction**, and the difference is not
+  cosmetic. `credit-support` used to gate on `covered?`, and
+  `requires-qualified-invoice?` returns nil for a facet the catalog does not
+  carry — so `(or (not needs?) ...)` made the answer `true`. Adding a second
+  jurisdiction with no invoice rule would therefore have turned every
+  input-tax claim there from *held, nobody catalogued this* into *approved,
+  no registration number needed*. Measured 2026-08-18, before any second
+  jurisdiction existed.
+
+  A jurisdiction is a bag of facets that were each read separately. Being in
+  the catalog says something was read about somewhere; it says nothing about
+  the facet you are asking after."
+  [j f]
+  (get-in jurisdictions [(normalize j) f]))
+
+(defn out-of-scope
+  "Why this catalog deliberately holds no rule for `j` about `f`, or nil.
+
+  Distinct from simply having no entry: this means the facet was considered
+  and left out for a stated reason — the United States has no federal VAT,
+  so there is no federal analogue of 適格請求書, and the sales taxes that do
+  exist are State law this catalog has not read.
+
+  **It is still not a pass.** Consumers see `:taxlaw/coverage :none` exactly
+  as before and hold exactly as before; the reason rides alongside so a
+  refusal can be explained rather than merely issued. Widening a pass is
+  never the additive part of adding a jurisdiction."
+  [j f]
+  (get-in jurisdictions [(normalize j) :jurisdiction/out-of-scope f]))
+
+(defn- uncovered
+  "The `:none` map for a facet nobody catalogued, carrying the reason when
+  there is one."
+  [path f]
+  (let [why (out-of-scope path f)]
+    (cond-> {:taxlaw/coverage :none :taxlaw/unchecked [path]}
+      why (assoc :taxlaw/out-of-scope f :taxlaw/why why))))
 
 (defn covered?
   "Is this jurisdiction in the catalog? `nil` is NOT covered — an undeclared
@@ -724,8 +1026,8 @@
   (let [path (normalize j)
         facet (get-in jurisdictions [path :jurisdiction/retention])]
     (cond
-      (not (covered? path))
-      {:taxlaw/coverage :none :taxlaw/unchecked [path]}
+      (nil? (facet-of path :jurisdiction/retention))
+      (uncovered path :jurisdiction/retention)
 
       (or (nil? blue-return?) (nil? fiscal-year-end))
       {:taxlaw/coverage :not-declared
@@ -774,9 +1076,8 @@
   that wants to tell `refused` from `not checked` can."
   [j document]
   (let [path (normalize j)]
-    (if-not (covered? path)
-      {:taxlaw/coverage :none
-       :taxlaw/unchecked [path]}
+    (if (nil? (facet-of path :jurisdiction/input-tax-credit))
+      (uncovered path :jurisdiction/input-tax-credit)
       (let [needs? (requires-qualified-invoice? path)
             n (:registration-number document)
             ok? (or (not needs?) (registration-number-valid? path n))]
@@ -785,6 +1086,14 @@
          :taxlaw/supported? ok?
          :taxlaw/requires-qualified-invoice? (boolean needs?)
          :taxlaw/registration-number n
+         ;; What the format check actually looked at. `true` from
+         ;; `registration-number-valid?` means "satisfies everything this
+         ;; catalog can check here", which in the EU is the ISO 3166 prefix
+         ;; and nothing else — a caller reading it as "this is a real VAT
+         ;; number" would be reading more than was measured.
+         :taxlaw/registration-format
+         (get-in jurisdictions [path :jurisdiction/input-tax-credit
+                                :rule/registration-format])
          :taxlaw/reason (cond ok? nil
                               (str/blank? (str n)) :missing-registration-number
                               :else :malformed-registration-number)}))))
@@ -825,8 +1134,18 @@
   [j document]
   (let [path (normalize j)]
     (cond
-      (not (covered? path))
-      {:taxlaw/coverage :none :taxlaw/unchecked [path]}
+      ;; Gate on the QUESTION, not on the facet map. This is the per-facet
+      ;; lesson one layer deeper, and it bit immediately: `[:eu]` carries a
+      ;; `:jurisdiction/electronic-transaction` facet, read from Articles 218
+      ;; and 246 — but that facet says Member States must ACCEPT electronic
+      ;; invoices, which is not an answer to *must the holder preserve the
+      ;; electromagnetic record as such*. With only a facet-presence gate,
+      ;; `requires-electronic-record?` came back nil, `required?` came back
+      ;; false, and an EU electronic transaction kept on PAPER was reported
+      ;; as preserved. Measured 2026-08-18, by the test that says so.
+      (nil? (:rule/must-preserve-electronic-record?
+             (facet-of path :jurisdiction/electronic-transaction)))
+      (uncovered path :jurisdiction/electronic-transaction)
 
       (nil? (:origin document))
       {:taxlaw/coverage :not-declared
@@ -1257,8 +1576,8 @@
         read-provision (get-in jurisdictions
                                [path :jurisdiction/wage-withholding :rule/provision])]
     (cond
-      (not (covered? path))
-      {:taxlaw/coverage :none :taxlaw/unchecked [path]}
+      (nil? (facet-of path :jurisdiction/wage-withholding))
+      (uncovered path :jurisdiction/wage-withholding)
 
       (nil? payment-kind)
       {:taxlaw/coverage :not-declared
@@ -1344,8 +1663,8 @@
         rule (get-in jurisdictions [path :jurisdiction/year-end-adjustment])
         ceiling (:rule/income-ceiling-yen rule)]
     (cond
-      (not (covered? path))
-      {:taxlaw/coverage :none :taxlaw/unchecked [path]}
+      (nil? (facet-of path :jurisdiction/year-end-adjustment))
+      (uncovered path :jurisdiction/year-end-adjustment)
 
       (nil? final-payment-of-year?)
       {:taxlaw/coverage :not-declared

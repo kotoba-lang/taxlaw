@@ -176,4 +176,80 @@
   :invariant "0 tax is an answer; it must not be what `could not answer` looks like"
   :file "src/kotoba/taxlaw.cljc"
   :find "      (not (map? subtotals))"
-  :replace "      (not (seq subtotals))"}]
+  :replace "      (not (seq subtotals))"}
+
+ ;; --- coverage is per facet, and per question (2026-08-18) ---
+
+ {:id :credit-support-gates-on-its-own-facet
+  :invariant "a catalogued jurisdiction with no invoice rule does not approve a claim"
+  :file "src/kotoba/taxlaw.cljc"
+  :find "    (if (nil? (facet-of path :jurisdiction/input-tax-credit))"
+  :replace "    (if (not (covered? path))"}
+
+ {:id :preservation-gates-on-the-question-not-the-facet
+  :invariant "an EU facet that answers a different question is not an answer"
+  :file "src/kotoba/taxlaw.cljc"
+  :find "      (nil? (:rule/must-preserve-electronic-record?\n             (facet-of path :jurisdiction/electronic-transaction)))"
+  :replace "      (nil? (facet-of path :jurisdiction/electronic-transaction))"}
+
+ {:id :retention-gates-on-its-own-facet
+  :invariant "retention answers :none for a jurisdiction whose retention was not read"
+  :file "src/kotoba/taxlaw.cljc"
+  :find "      (nil? (facet-of path :jurisdiction/retention))"
+  :replace "      (nil? (facet-of path :jurisdiction/label))"}
+
+ {:id :withholding-gates-on-its-own-facet
+  :invariant "withholding answers :none where no withholding rule was read"
+  :file "src/kotoba/taxlaw.cljc"
+  :find "      (nil? (facet-of path :jurisdiction/wage-withholding))"
+  :replace "      (nil? (facet-of path :jurisdiction/label))"}
+
+ {:id :out-of-scope-is-still-not-a-pass
+  :invariant ":none is preserved so a consumer that never heard of it still holds"
+  :file "src/kotoba/taxlaw.cljc"
+  :find "    (cond-> {:taxlaw/coverage :none :taxlaw/unchecked [path]}"
+  :replace "    (cond-> {:taxlaw/coverage (if why :out-of-scope :none) :taxlaw/unchecked [path]}"}
+
+ ;; --- [:eu] and [:us]: mostly what the instruments do NOT say ---
+
+ {:id :the-eu-states-no-retention-period
+  :invariant "Article 247(1) hands the period to the Member State"
+  :file "src/kotoba/taxlaw.cljc"
+  :find "    {:rule/years nil\n     :rule/period-set-by :member-state"
+  :replace "    {:rule/years 10\n     :rule/period-set-by :member-state"}
+
+ {:id :the-us-states-no-retention-period
+  :invariant "26 CFR 1.6001-1(e) states a condition, not a number"
+  :file "src/kotoba/taxlaw.cljc"
+  :find "    {:rule/years nil\n     :rule/period-set-by :materiality"
+  :replace "    {:rule/years 7\n     :rule/period-set-by :materiality"}
+
+ {:id :the-eu-prefix-must-be-two-uppercase-letters
+  :invariant "Article 215: an ISO 3166 alpha-2 prefix"
+  :file "src/kotoba/taxlaw.cljc"
+  :find "     :rule/registration-number-pattern #\"[A-Z]{2}[0-9A-Za-z+*.]+\""
+  :replace "     :rule/registration-number-pattern #\"[A-Za-z]{2}[0-9A-Za-z+*.]+\""}
+
+ {:id :the-eu-prefix-needs-a-body-after-it
+  :invariant "a bare prefix is not a VAT identification number"
+  :file "src/kotoba/taxlaw.cljc"
+  :find "#\"[A-Z]{2}[0-9A-Za-z+*.]+\""
+  :replace "#\"[A-Z]{2}[0-9A-Za-z+*.]*\""}
+
+ {:id :the-format-limits-ride-on-the-answer
+  :invariant "a `true` says what it did not look at"
+  :file "src/kotoba/taxlaw.cljc"
+  :find "         :taxlaw/registration-format\n         (get-in jurisdictions [path :jurisdiction/input-tax-credit\n                                :rule/registration-format])"
+  :replace "         :taxlaw/registration-format nil"}
+
+ {:id :the-eu-does-not-inherit-japans-preservation-duty
+  :invariant "Article 218 obliges the Member State to accept, not the holder to preserve"
+  :file "src/kotoba/taxlaw.cljc"
+  :find "    {:rule/electronic-form-must-be-accepted? true"
+  :replace "    {:rule/must-preserve-electronic-record? true\n     :rule/electronic-form-must-be-accepted? true"}
+
+ {:id :a-member-state-is-not-covered-by-its-union
+  :invariant "the Directive hands answers down; [:eu :de] is not [:eu]"
+  :file "src/kotoba/taxlaw.cljc"
+  :find "  [jurisdiction]\n  (contains? jurisdictions (normalize jurisdiction)))"
+  :replace "  [jurisdiction]\n  (let [p (normalize jurisdiction)]\n    (boolean (some #(contains? jurisdictions (vec (take % p))) (range 1 (inc (count p)))))))"}]

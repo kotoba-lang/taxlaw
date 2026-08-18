@@ -39,6 +39,97 @@ That distinction is the whole library. A bookkeeping actor that treated
 silence as sufficiency would let a receipt nobody has seen the law about
 support an input-tax credit.
 
+## Three jurisdictions, and mostly what two of them do not say
+
+| | read from source | notably absent |
+|---|---|---|
+| `[:jp]` | 消費税法, 所得税法, 電子帳簿保存法 + 施行規則, 法人税法施行規則, 消費税法施行令, 会社法 | — |
+| `[:eu]` | Directive 2006/112/EC Art 215, 218, 226, 244, 246, 247 | **no retention period** |
+| `[:us]` | 26 CFR § 1.6001-1(a), (e) | **no retention period, and no federal VAT at all** |
+
+Both non-JP instruments were fetched and quoted verbatim on 2026-08-18. The
+most valuable thing in each is an absence:
+
+- **Article 247(1)**: *"Each Member State shall determine the period throughout
+  which taxable persons must ensure the storage of invoices…"*
+- **26 CFR § 1.6001-1(e)**: *"…retained so long as the contents thereof may
+  become material in the administration of any internal revenue law."*
+
+"EU: 10 years" and "US: 7 years" are folklore. Neither number appears in either
+text, so `retention-years` is **nil** for both, and `:rule/period-set-by` says
+where the answer actually lives (`:member-state` / `:materiality`). A test
+asserts the US quote contains no digit-plus-"years" at all.
+
+### Adding a jurisdiction must not widen a single pass
+
+That is the whole risk of this change and it nearly went wrong. `credit-support`
+gated on `covered?`, and `requires-qualified-invoice?` returns nil for a facet
+the catalog does not carry — so `(or (not needs?) …)` evaluated to **true**.
+The first jurisdiction added without an invoice rule would have flipped every
+input-tax claim there from *held, nobody catalogued this* to *approved, no
+registration number needed*, and **the diff that did it would have been a data
+entry.** Measured 2026-08-18, before `[:us]` existed.
+
+So coverage is now per **facet** (`facet-of`), and — one layer deeper, because
+this bit immediately — per **question**. `[:eu]` carries a
+`:jurisdiction/electronic-transaction` facet read from Articles 218 and 246, but
+that facet says Member States must *accept* electronic invoices, which is not an
+answer to *must the holder preserve the electromagnetic record as such*. With a
+facet-presence gate, an EU electronic transaction kept on **paper** reported as
+preserved. 電子帳簿保存法 第七条 and Article 218 share a facet key and point in
+opposite directions.
+
+`out-of-scope` records a facet left out **on purpose**, with the reason — the
+United States has no federal VAT, so there is no federal analogue of 適格請求書,
+and the sales taxes that exist are State law this catalog has not read. It still
+answers `:taxlaw/coverage :none`, so a consumer that has never heard of
+`:out-of-scope` holds exactly as it held before. **The reason is additive; the
+refusal is not weakened.**
+
+### What a `true` from `registration-number-valid?` means in the EU
+
+Article 215 gives *"a prefix in accordance with ISO code 3166 — alpha 2"* and
+nothing else — no length, no digit count, no Member State list. So the check is
+the prefix shape, and the answer carries `:taxlaw/registration-format` naming
+what was **not** checked: `:member-state-is-a-member`, `:body-format`,
+`:check-digit`. `XX1` passes, and that limit is documented as real rather than
+as a disclaimer. A pattern that also fixed a length would be enforcing one
+Member State's rule against all of them.
+
+### A citation nobody can check is not a citation that checked out
+
+`tools/verify_citations.cljs` reads `:law/id` and checks it against the e-Gov
+corpus. A Directive and a CFR section have no `:law/id`, so before this change
+they **vanished from the run** and the summary read `10 / 10 in force` — true of
+the ten it looked at, and read as true of the catalog. The verifier now prints a
+`NO-CORPUS` line unconditionally, including the zero case, so *nothing outside
+the corpus* stays distinguishable from *nobody looked outside the corpus*:
+
+```
+10 / 10 e-Gov-corpus statutes in force with matching titles
+NO-CORPUS	 2 statute(s) cited that NO corpus in this workspace can check
+  UNVERIFIED  26 CFR § 1.6001-1 Records
+  UNVERIFIED  Council Directive 2006/112/EC on the common system of value added tax
+```
+
+A verbatim quote with a retrieval date is a **weaker** claim than the corpus
+check: it says a fetch saw this text on a day, not that the instrument is in
+force today.
+
+### The retrieval URL is not the citation URL
+
+`eur-lex.europa.eu/legal-content/…` answers **HTTP 202 with an empty body** to a
+fetch, and `Accept: text/html` on CELLAR **404s**. What serves the text:
+
+```bash
+curl -sL -H "Accept: application/xhtml+xml" -H "Accept-Language: eng" \
+  "http://publications.europa.eu/resource/celex/32006L0112"
+```
+
+Both URLs are recorded (`:source/url` for a human, `:source/retrieval-url` for a
+fetch) because a later reader who tried the pretty one would conclude the source
+was gone.
+
 ## Jurisdictions are paths, not codes
 
 `[:jp]` today. A path leaves room for `[:jp :tokyo]` or `[:us :ca]` without
