@@ -331,6 +331,27 @@ requirements**, and treating them as one rule is the easy mistake here.
 Both require the same three things of the search itself: each 記録項目 usable
 as a condition, a range on date or amount, and two or more conditions combined.
 
+### ⚠ The invoice figure is not the return's national tax
+
+消費税額等 includes 地方消費税 by its own definition, so the 十 in 施行令
+第七十条の十 is the **combined** rate. 消費税法 第二十九条 sets the **national**
+rate at 百分の七・八 (軽減 百分の六・二四), read verbatim on 2026-08-18.
+
+A caller reaching for `consumption-tax-amount` as 課税標準額に対する消費税額
+(第四十五条第一項第二号) **overstates the national tax by 10/7.8 — about 28% —
+on every return**, and the return still adds up.
+
+Found by a consumer, not by this suite: `cloud-itonami-isco-4311` hit it while
+building a 消費税申告 and handled it by never calling the function. That is
+right for that repo and not enough for this one — the next consumer will not
+have read their report. So `:rule/is-not` carries it **in the data**, with
+第二十九条 quoted, and a test asserts the quote contains 百分の七・八 and does
+*not* contain 百分の十.
+
+There is no function here that computes a return figure at all: 積上げ vs
+割戻し (施行令 第六十二条 / 第四十六条) is a taxpayer election this catalog has
+not read, and the absence is asserted rather than left for a reader to notice.
+
 ### `requires-book-search?` does not answer `true`
 
 It answers `:claiming-preferential-treatment`. Ordinary electronic book

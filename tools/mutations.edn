@@ -338,4 +338,48 @@
   :invariant "a facet added without a line here is uncounted, and silently"
   :file "src/kotoba/taxlaw.cljc"
   :find "    :jurisdiction/year-end-adjustment})"
-  :replace "    })"}]
+  :replace "    })"}
+
+ ;; --- the invoice figure is not the return's national tax (2026-08-18).
+ ;; Found by a CONSUMER (cloud-itonami-isco-4311, building a 消費税申告), not
+ ;; by this suite. 消費税額等 includes 地方消費税, so 施行令 第七十条の十's 十
+ ;; is the combined rate; 第二十九条 sets the national rate at 百分の七・八.
+ ;; Reaching for consumption-tax-amount as 課税標準額に対する消費税額
+ ;; overstates the national tax by about 28% on every return, and the return
+ ;; still adds up. ---
+
+ {:id :the-warning-is-in-the-data-not-only-the-docstring
+  :invariant "a reader who skips the docstring still meets it"
+  :file "src/kotoba/taxlaw.cljc"
+  :find "     :rule/is-not\n     {:kotoba/what"
+  :replace "     :rule/is-not-REMOVED\n     {:kotoba/what"}
+
+ {:id :the-national-rate-is-seven-point-eight
+  :invariant "第二十九条 says 百分の七・八, not 百分の十"
+  :file "src/kotoba/taxlaw.cljc"
+  :find "      :rule/national-rates {:standard [78 1000] :reduced [624 10000]}"
+  :replace "      :rule/national-rates {:standard [10 100] :reduced [8 100]}"}
+
+ {:id :the-reduced-national-rate-is-six-point-two-four
+  :invariant "軽減 is 百分の六・二四, not 百分の八"
+  :file "src/kotoba/taxlaw.cljc"
+  :find ":reduced [624 10000]}"
+  :replace ":reduced [8 100]}"}
+
+ {:id :the-rate-quote-is-the-articles-own-words
+  :invariant "quoted verbatim, so the numbers cannot drift from the statute"
+  :file "src/kotoba/taxlaw.cljc"
+  :find "                                     \"（軽減対象課税貨物を除く。）百分の七・八\""
+  :replace "                                     \"（軽減対象課税貨物を除く。）百分の十\""}
+
+ ;; ⚠ The first form of this one RENAMED `consumption-tax`, and the harness
+ ;; scored it UNMEASURED rather than killed — correctly: the rename broke
+ ;; every caller, the namespace would not load, and a suite that cannot start
+ ;; has not been shown to notice anything. Retargeted to ADD a function
+ ;; instead, which is what the invariant is actually about: a return-computing
+ ;; function appearing here is what must be caught, not one disappearing.
+ {:id :this-library-computes-no-return-figure
+  :invariant "積上げ vs 割戻し is an unread election; no function produces one"
+  :file "src/kotoba/taxlaw.cljc"
+  :find "(defn consumption-tax\n"
+  :replace "(defn consumption-tax-return [_ _] 0)\n\n(defn consumption-tax\n"}]

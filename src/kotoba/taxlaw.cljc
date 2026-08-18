@@ -301,6 +301,17 @@
                  "revenue officers or employees, and shall be retained so long "
                  "as the contents thereof may become material in the "
                  "administration of any internal revenue law.")}
+   {:claim :national-consumption-tax-rate-is-not-the-invoice-rate
+     :source :jp/shohizei-ho
+     :provision "消費税法 第二十九条"
+     :retrieved-via "e-Gov law API v2 GET /api/2/law_data/363AC0000000108"
+     :retrieved-at "2026-08-18"
+     :retrieved-revision "363AC0000000108_20260401_508AC0000000012"
+     :quote (str "消費税の税率は、次の各号に掲げる区分に応じ当該各号に定める率と"
+                 "する。一課税資産の譲渡等（軽減対象課税資産の譲渡等を除く。）、"
+                 "特定課税仕入れ及び保税地域から引き取られる課税貨物（軽減対象"
+                 "課税貨物を除く。）百分の七・八二軽減対象課税資産の譲渡等及び"
+                 "保税地域から引き取られる軽減対象課税貨物百分の六・二四")}
    {:claim :qualified-invoice-tax-amount-calculation
      :source :jp/shohizei-rei
      :provision "消費税法施行令 第七十条の十"
@@ -485,6 +496,22 @@
     ;; 消費税額等 is defined upstream (施行令 第四十五条) as 消費税額 plus the
     ;; 地方消費税額 computed on it, so the 十 in 百分の十 is the combined
     ;; figure and no separate local-tax step belongs here.
+    ;;
+    ;; ⚠ AND THAT IS WHY THIS FIGURE IS NOT THE ONE A RETURN WANTS.
+    ;; 消費税法 第二十九条 sets the NATIONAL rate at 百分の七・八 (軽減:
+    ;; 百分の六・二四), read verbatim 2026-08-18 from
+    ;; `GET /api/2/law_data/363AC0000000108` (revision
+    ;; 363AC0000000108_20260401_508AC0000000012). The familiar 10 and 8
+    ;; include 地方消費税. So `consumption-tax-amount` gives what an invoice
+    ;; must SHOW, and a caller that reached for it as 第四十五条第一項第二号's
+    ;; 課税標準額に対する消費税額 would overstate the national tax by
+    ;; 10/7.8 — about 28% — on every return, with two tidy columns and
+    ;; nothing saying which.
+    ;;
+    ;; Found 2026-08-18 by `cloud-itonami-isco-4311` while building a
+    ;; 消費税申告, which handled it by never calling this function. That is
+    ;; right for that repo and not enough for this one: the next consumer
+    ;; will not have read their report. `:rule/is-not` says it here.
     :jurisdiction/qualified-invoice-tax-amount
     {:rule/review :read-from-source
      :rule/provision "消費税法施行令 第七十条の十"
@@ -504,6 +531,24 @@
       :tax-inclusive {:statute "第二号（税込価額）"
                       :standard [10 110] :reduced [8 108]}}
      :rule/tax-categories #{:standard :reduced}
+     ;; What this figure is NOT, named in the data so a reader who skips the
+     ;; docstring still meets it.
+     :rule/is-not
+     {:kotoba/what "課税標準額に対する消費税額（消費税法 第四十五条第一項第二号）"
+      :kotoba/why (str "この数値は消費税額等であり地方消費税を含む。申告の"
+                       "国税分は 第二十九条 の 百分の七・八（軽減 百分の六・二四）")
+      :rule/national-rates {:standard [78 1000] :reduced [624 10000]}
+      :rule/national-rate-provision "消費税法 第二十九条"
+      :rule/national-rate-quote (str "消費税の税率は、次の各号に掲げる区分に応じ"
+                                     "当該各号に定める率とする。一課税資産の譲渡等"
+                                     "（軽減対象課税資産の譲渡等を除く。）、特定課税"
+                                     "仕入れ及び保税地域から引き取られる課税貨物"
+                                     "（軽減対象課税貨物を除く。）百分の七・八"
+                                     "二軽減対象課税資産の譲渡等及び保税地域から"
+                                     "引き取られる軽減対象課税貨物百分の六・二四")
+      :rule/retrieved-at "2026-08-18"
+      :rule/retrieved-via "e-Gov law API v2 GET /api/2/law_data/363AC0000000108"
+      :rule/retrieved-revision "363AC0000000108_20260401_508AC0000000012"}
      ;; 「端数を処理する」— the article names no direction, so neither does
      ;; this catalog. These are the choices a caller may state.
      :rule/rounding-policies #{:floor :ceil :round-half-up}
@@ -1229,7 +1274,20 @@
   Neither the method nor the rounding is defaulted. 「いずれかとする」 and
   「端数を処理するものとする」 are both choices the article hands the issuer,
   and a library that picks one has answered a question it was not asked —
-  by ¥1 per rate, on every invoice, forever."
+  by ¥1 per rate, on every invoice, forever.
+
+  ## ⚠ This is not the figure a 申告書 wants
+
+  消費税額等 includes 地方消費税 by its own definition, so the 十 here is the
+  combined rate. 消費税法 第二十九条 sets the **national** rate at 百分の七・八
+  (軽減 百分の六・二四). A caller reaching for this as
+  課税標準額に対する消費税額 (第四十五条第一項第二号) overstates the national
+  tax by 10/7.8 — about 28% — on every return, and the return still adds up.
+
+  `:rule/is-not` on the facet carries that, with 第二十九条 quoted verbatim, so
+  the warning is in the data and not only in this docstring. There is no
+  function here that computes a return figure: 積上げ vs 割戻し (施行令
+  第六十二条 / 第四十六条) is a taxpayer election this catalog has not read."
   [j invoice]
   (let [path (normalize j)
         rule (get-in jurisdictions [path :jurisdiction/qualified-invoice-tax-amount])
