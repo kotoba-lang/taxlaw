@@ -84,15 +84,37 @@
       (is (contains? #{:statute :guidance} (:source/kind s)))
       (is (str/starts-with? (:source/url s) "https://")))))
 
-(deftest statutes-carry-a-law-id-and-guidance-does-not
-  (doseq [[id s] taxlaw/sources]
-    (testing (str id)
-      (if (= :statute (:source/kind s))
-        (is (some? (:law/id s))
-            "a statute without a law id cannot be checked against the corpus")
-        (is (nil? (:law/id s))
-            "guidance pages are not in the law corpus; claiming an id would
-             make the checker look for something that is not there")))))
+(deftest no-statute-is-silently-uncheckable
+  (testing "the original form of this test required every statute to carry a
+            `:law/id`. That was right while the catalog was Japanese and is
+            the WRONG generalisation: a Directive and a CFR section are not in
+            the e-Gov corpus and never will be. Weakening it to `some
+            statutes have ids` would let a citation nobody can check look
+            exactly like one that checked out — so it is strengthened
+            instead. Every statute must say which corpus can verify it, and
+            `:none` must be said out loud."
+    (doseq [[id s] taxlaw/sources]
+      (testing (str id)
+        (if (= :statute (:source/kind s))
+          (is (or (some? (:law/id s))
+                  (= :none (:source/corpus s)))
+              "a statute must either be in the e-Gov corpus or declare that no
+               corpus can check it")
+          (is (nil? (:law/id s))
+              "guidance pages are not in the law corpus; claiming an id would
+               make the checker look for something that is not there"))))))
+
+(deftest a-statute-outside-the-corpus-says-how-it-was-actually-fetched
+  (testing "the human-facing URL and the one that serves the text are not the
+            same thing — eur-lex.europa.eu answers 202 with an empty body, and
+            a later reader who tries the pretty URL would conclude the source
+            is gone"
+    (doseq [[id s] taxlaw/sources
+            :when (and (= :statute (:source/kind s)) (= :none (:source/corpus s)))]
+      (testing (str id)
+        (is (not (str/blank? (:source/retrieval-url s)))))))
+  (testing "and there is at least one such statute, or this test measured nothing"
+    (is (pos? (count (filter #(= :none (:source/corpus %)) (vals taxlaw/sources)))))))
 
 (deftest law-ids-are-distinct
   (let [ids (taxlaw/law-ids)]
@@ -138,7 +160,9 @@
 
 (deftest the-verification-record-lists-every-read-claim
   (let [claims (:catalog/content-verified taxlaw/catalog-verification)]
-    (is (= 7 (count claims)))
+    (is (= 12 (count claims)))
+    (is (some #(= :eu-invoice-required-details (:claim %)) claims))
+    (is (some #(= :us-record-retention-states-no-period (:claim %)) claims))
     (is (some #(= :qualified-invoice-tax-amount-calculation (:claim %)) claims))
     (is (some #(= :electronic-transaction-record-preservation (:claim %)) claims))
     (is (some #(= :book-search-function-for-preferential-treatment (:claim %)) claims))
@@ -834,3 +858,192 @@
 (deftest an-uncatalogued-jurisdiction-gets-no-tax-figure
   (is (= :none (:taxlaw/coverage (taxlaw/consumption-tax-amount [:zz] inv))))
   (is (nil? (taxlaw/consumption-tax [:zz] inv))))
+
+;; ---------------------------------------------------------------------------
+;; Coverage is per facet, not per jurisdiction
+;;
+;; Measured 2026-08-18, BEFORE a second jurisdiction was added — which is the
+;; only reason it was caught. `credit-support` gated on `covered?`, and
+;; `requires-qualified-invoice?` returns nil for a facet the catalog does not
+;; carry, so `(or (not needs?) ...)` evaluated to true. The first jurisdiction
+;; added with no invoice rule would have flipped every input-tax claim there
+;; from `held, nobody catalogued this` to `approved, no registration number
+;; needed`, and the diff that did it would have been a data entry.
+;; ---------------------------------------------------------------------------
+
+(deftest a-catalogued-jurisdiction-with-no-invoice-rule-does-not-approve-a-claim
+  (with-redefs [taxlaw/jurisdictions
+                (assoc taxlaw/jurisdictions
+                       [:xx] {:jurisdiction/path [:xx]
+                              :jurisdiction/label "Somewhere"
+                              ;; one facet read, the invoice facet not
+                              :jurisdiction/retention {:rule/years 5}})]
+    (is (taxlaw/covered? [:xx]) "the jurisdiction IS in the catalog")
+    (let [r (taxlaw/credit-support [:xx] {})]
+      (is (= :none (:taxlaw/coverage r))
+          "but the invoice facet is not, and that is what was asked")
+      (is (nil? (:taxlaw/supported? r))
+          "absent, not true — a document with no registration number at all
+           must not become creditable because a different facet was read"))
+    (testing "and the facet that WAS read still answers"
+      (is (= 5 (taxlaw/retention-years [:xx]))))))
+
+(deftest every-three-valued-answer-gates-on-its-own-facet
+  (with-redefs [taxlaw/jurisdictions
+                ;; A label and NOTHING else. Every real jurisdiction has a
+                ;; label, so a gate that keyed on one instead of on its own
+                ;; facet would agree with the right gate on all three
+                ;; catalogued jurisdictions and disagree only here — which is
+                ;; exactly what a mutation found when this map had no label.
+                (assoc taxlaw/jurisdictions [:xx] {:jurisdiction/path [:xx]
+                                                   :jurisdiction/label "Somewhere"})]
+    (doseq [[label r] [["credit-support" (taxlaw/credit-support [:xx] {})]
+                       ["record-preservation" (taxlaw/record-preservation
+                                               [:xx] {:origin :electronic-transaction})]
+                       ["retention" (taxlaw/retention [:xx] {:fiscal-year-end "2026-03-31"
+                                                             :blue-return? true})]
+                       ["withholding-obligation" (taxlaw/withholding-obligation
+                                                  [:xx] {:kind :employment-income})]
+                       ["year-end-adjustment" (taxlaw/year-end-adjustment [:xx] {})]
+                       ["book-search" (taxlaw/book-search
+                                       [:xx] {:claiming-preferential-treatment? true})]
+                       ["electronic-transaction-search" (taxlaw/electronic-transaction-search
+                                                         [:xx] {:can-produce-on-demand? true})]
+                       ["consumption-tax-amount" (taxlaw/consumption-tax-amount
+                                                  [:xx] {:method :tax-exclusive
+                                                         :rounding :floor
+                                                         :subtotals {}})]]]
+      (is (= :none (:taxlaw/coverage r)) label))))
+
+(deftest a-facet-left-out-on-purpose-says-why-and-is-still-not-a-pass
+  (with-redefs [taxlaw/jurisdictions
+                (assoc taxlaw/jurisdictions
+                       [:xx] {:jurisdiction/path [:xx]
+                              :jurisdiction/out-of-scope
+                              {:jurisdiction/input-tax-credit "no federal VAT here"}})]
+    (let [r (taxlaw/credit-support [:xx] {:registration-number "T1234567890123"})]
+      (is (= :none (:taxlaw/coverage r))
+          ":none exactly as before — a consumer that has never heard of
+           :out-of-scope holds exactly as it held before")
+      (is (= :jurisdiction/input-tax-credit (:taxlaw/out-of-scope r)))
+      (is (= "no federal VAT here" (:taxlaw/why r)))
+      (is (nil? (:taxlaw/supported? r))))
+    (is (= "no federal VAT here"
+           (taxlaw/out-of-scope [:xx] :jurisdiction/input-tax-credit)))
+    (is (nil? (taxlaw/out-of-scope [:jp] :jurisdiction/input-tax-credit))
+        "a facet that IS read is not out of scope")))
+
+;; ---------------------------------------------------------------------------
+;; [:eu] and [:us] — and mostly what they do NOT say
+;;
+;; Both instruments were read on 2026-08-18: the VAT Directive through CELLAR
+;; (`Accept: application/xhtml+xml`, because the human-facing eur-lex URL
+;; answers 202 with an empty body) and 26 CFR 1.6001-1 through the eCFR API.
+;;
+;; The most valuable thing in both is an absence. Article 247(1) hands the
+;; storage period to the Member State; 26 CFR 1.6001-1(e) states a condition
+;; and no number at all. "EU: 10 years" and "US: 7 years" are folklore that
+;; appears in neither text, and a catalog that returned them would be
+;; inventing law that reads exactly like law that was read.
+;; ---------------------------------------------------------------------------
+
+(deftest adding-a-jurisdiction-did-not-widen-a-single-pass
+  (testing "this is the whole risk of the change and it gets its own test"
+    (testing "a US input-tax claim is held exactly as it was when the United
+              States was not in the catalog at all"
+      (let [r (taxlaw/credit-support [:us] {:registration-number "T1234567890123"})]
+        (is (= :none (:taxlaw/coverage r)))
+        (is (nil? (:taxlaw/supported? r)))
+        (is (= :jurisdiction/input-tax-credit (:taxlaw/out-of-scope r)))
+        (is (str/includes? (:taxlaw/why r) "no federal VAT"))))
+    (testing "and every facet neither instrument covers is :none, not a pass"
+      (doseq [[j f] [[[:us] taxlaw/withholding-obligation]
+                     [[:us] taxlaw/year-end-adjustment]
+                     [[:eu] taxlaw/withholding-obligation]
+                     [[:eu] taxlaw/year-end-adjustment]]]
+        (is (= :none (:taxlaw/coverage (f j {}))) (pr-str j))))
+    (testing "including the two facets added most recently"
+      (doseq [j [[:us] [:eu]]]
+        (is (= :none (:taxlaw/coverage (taxlaw/book-search j {:claiming-preferential-treatment? true}))))
+        (is (nil? (taxlaw/consumption-tax j {:method :tax-exclusive :rounding :floor
+                                             :subtotals {:standard 10000}})))))))
+
+(deftest neither-instrument-states-a-retention-period
+  (testing "Article 247(1): each Member State shall determine the period"
+    (is (nil? (taxlaw/retention-years [:eu])))
+    (is (= :member-state
+           (:rule/period-set-by (taxlaw/facet-of [:eu] :jurisdiction/retention)))))
+  (testing "26 CFR 1.6001-1(e): so long as the contents may become material —
+            a condition, not a number. `seven years` is in no paragraph of it"
+    (is (nil? (taxlaw/retention-years [:us])))
+    (is (= :materiality
+           (:rule/period-set-by (taxlaw/facet-of [:us] :jurisdiction/retention))))
+    (let [q (:rule/quote (taxlaw/facet-of [:us] :jurisdiction/retention))]
+      (is (str/includes? q "may become material"))
+      (is (not (str/includes? q "seven")))
+      (is (not (re-find #"\d+ years" q)))))
+  (testing "and Japan, which does state one, still does"
+    (is (= 7 (taxlaw/retention-years [:jp])))))
+
+(deftest the-eu-invoice-rule-is-read-and-the-prefix-is-all-that-is-checked
+  (is (true? (taxlaw/requires-qualified-invoice? [:eu])))
+  (testing "Article 215 gives a two-letter ISO 3166 prefix and nothing else"
+    (is (taxlaw/registration-number-valid? [:eu] "DE811907980"))
+    (is (taxlaw/registration-number-valid? [:eu] "EL999999999") "Greece may use EL")
+    (is (not (taxlaw/registration-number-valid? [:eu] "811907980")) "no prefix")
+    (is (not (taxlaw/registration-number-valid? [:eu] "de811907980")) "lowercase")
+    (is (not (taxlaw/registration-number-valid? [:eu] "DE")) "prefix alone")
+    (is (not (taxlaw/registration-number-valid? [:eu] nil))))
+  (testing "and a `true` here says what it did NOT look at, because reading it
+            as `this is a real VAT number` would be reading more than was
+            measured — the body and the check digit are Member State law"
+    (let [r (taxlaw/credit-support [:eu] {:registration-number "DE811907980"})
+          fmt (:taxlaw/registration-format r)]
+      (is (true? (:taxlaw/supported? r)))
+      (is (= #{:prefix-shape} (:checked fmt)))
+      (is (contains? (:not-checked fmt) :member-state-is-a-member)
+          "XX is two uppercase letters and is not a Member State")
+      (is (contains? (:not-checked fmt) :check-digit))
+      (is (taxlaw/registration-number-valid? [:eu] "XX1")
+          "and that limit is real, not a disclaimer")))
+  (testing "the JP format is untouched by any of this"
+    (is (taxlaw/registration-number-valid? [:jp] "T1234567890123"))
+    (is (not (taxlaw/registration-number-valid? [:jp] "DE811907980")))
+    (is (not (taxlaw/registration-number-valid? [:eu] "T1234567890123"))
+        "a JP number has no ISO 3166 prefix — T is one letter")))
+
+(deftest the-eu-electronic-rule-points-the-other-way-from-japans
+  (testing "電子帳簿保存法 第七条 obliges the HOLDER to preserve; Article 218
+            obliges the MEMBER STATE to accept. Same facet key, different
+            claim — so the EU must not inherit Japan's answer"
+    (is (true? (taxlaw/requires-electronic-record? [:jp])))
+    (is (nil? (taxlaw/requires-electronic-record? [:eu]))
+        "nil, not false: the Directive does not impose that obligation and
+         this catalog has not read one that does")
+    (let [eu (taxlaw/facet-of [:eu] :jurisdiction/electronic-transaction)]
+      (is (true? (:rule/electronic-form-must-be-accepted? eu)))
+      (is (= {:authenticity-of-origin true :integrity-of-content true :legibility true}
+             (:rule/must-guarantee eu))))
+    (testing "so `preserved?` does not pass an EU document on Japan's rule"
+      (is (not (taxlaw/preserved? [:eu] {:origin :electronic-transaction
+                                         :preservation :paper}))))))
+
+(deftest what-is-out-of-scope-is-recorded-rather-than-merely-absent
+  (testing "an absent facet that leaves no trace looks identical to one
+            nobody thought of — the same reason `:catalog/rejected` exists"
+    (doseq [f [:jurisdiction/input-tax-credit :jurisdiction/wage-withholding
+               :jurisdiction/book-search]]
+      (is (not (str/blank? (taxlaw/out-of-scope [:us] f))) (str f)))
+    (doseq [f [:jurisdiction/wage-withholding :jurisdiction/book-search]]
+      (is (not (str/blank? (taxlaw/out-of-scope [:eu] f))) (str f))))
+  (testing "and a facet that WAS read is not out of scope"
+    (is (nil? (taxlaw/out-of-scope [:us] :jurisdiction/retention)))
+    (is (nil? (taxlaw/out-of-scope [:eu] :jurisdiction/input-tax-credit)))))
+
+(deftest three-jurisdictions-are-covered-and-the-rest-are-not
+  (is (= #{[:jp] [:eu] [:us]} (set (keys taxlaw/jurisdictions))))
+  (doseq [j [[:jp] [:eu] [:us]]] (is (taxlaw/covered? j)))
+  (doseq [j [[:eu :de] [:us :ca] [:sg] nil]]
+    (is (not (taxlaw/covered? j))
+        "a member state under a covered parent is NOT covered by it — the
+         Directive hands answers down and worklaw keys them separately")))

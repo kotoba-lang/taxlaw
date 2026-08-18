@@ -52,6 +52,28 @@
            sort
            vec))))
 
+(defn- no-corpus-statutes
+  "Statutes the catalog declares as `:source/corpus :none` — instruments no
+  corpus in this workspace can check.
+
+  They must be COUNTED and NAMED, not skipped. The e-Gov check reads
+  `:law/id`, and a Directive or a CFR section has none, so before this
+  existed they vanished from the run entirely and the summary line read
+  `10 / 10 in force` — which is true of the ten it looked at and reads as
+  true of the catalog. That is this workspace's recurring defect: a check
+  that could not run returning what a check that ran and found nothing
+  returns."
+  []
+  (let [f "src/kotoba/taxlaw.cljc"]
+    (if-not (fs/existsSync f)
+      []
+      (->> (fs/readFileSync f "utf8")
+           (re-seq #":source/title\s+\"([^\"]+)\"[\s\S]{0,400}?:source/corpus\s+:none")
+           (map second)
+           distinct
+           sort
+           vec))))
+
 (defn- titles-from-source []
   (let [f "src/kotoba/taxlaw.cljc"]
     (if-not (fs/existsSync f)
@@ -71,7 +93,8 @@
   (let [corpus (or (first args) default-corpus)
         index-file (path/join corpus "index" "laws.edn")
         ids (law-ids-from-source)
-        titles (titles-from-source)]
+        titles (titles-from-source)
+        no-corpus (no-corpus-statutes)]
 
     (when (empty? ids)
       ;; evidence floor: zero citations scanned is not zero citations broken.
@@ -122,7 +145,21 @@
           (println (if (= :ok verdict) "  ok  " "  FAIL")
                    id "\t" (or status "") "\t" (or title why)))
         (println)
-        (println (- (count results) (count bad)) "/" (count results) "in force with matching titles")
+        (println (- (count results) (count bad)) "/" (count results)
+                 "e-Gov-corpus statutes in force with matching titles")
+        ;; Everything below this line is the part the summary above does NOT
+        ;; cover. Printing it unconditionally — including the zero case — is
+        ;; what keeps `nothing outside the corpus` distinguishable from
+        ;; `nobody looked outside the corpus`.
+        (println "NO-CORPUS\t" (count no-corpus)
+                 "statute(s) cited that NO corpus in this workspace can check")
+        (doseq [t no-corpus]
+          (println "  UNVERIFIED " t))
+        (when (seq no-corpus)
+          (println "   These were read from their publisher and quoted verbatim in"
+                   "\n   `:catalog/content-verified`, which is a weaker claim than the"
+                   "\n   corpus check above: it says a human-run fetch saw this text on a"
+                   "\n   date, not that the instrument is still in force today."))
         (when (seq superseded)
           (println (count superseded)
                    "of those are :superseded-revision — the corpus snapshot predates a"
