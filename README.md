@@ -39,6 +39,56 @@ That distinction is the whole library. A bookkeeping actor that treated
 silence as sufficiency would let a receipt nobody has seen the law about
 support an input-tax credit.
 
+## How much of the world is this? Ask, and supply the denominator
+
+`world-coverage` **requires a universe and has no default**, and that is the
+whole design. With three jurisdictions read and three known, the honest
+arithmetic is `3/3`, and `100%` is what a reader takes away. The denominator
+has to come from outside, because the thing being measured is precisely *what
+this catalog does not know about* — the same shape as a citation checker whose
+corpus is missing reporting zero problems.
+
+`kotoba-lang/iso3166` is one place to get one (193 UN member states, and
+portable as of 2026-08-18). This library does **not** depend on it: `deps.edn`
+says it is deliberately dependency-free so that an actor needing to know what
+a tax record must carry does not thereby acquire anything else — and a
+universe is the caller's question anyway. A firm trading in four countries has
+a universe of four, and `4/4` is true and useful where 193 would bury it. The
+key spaces differ (`[:jp]` here, `"JPN"` there), so a caller bridging them
+supplies the mapping visibly rather than this library guessing at one.
+
+### Coverage has two dimensions and reporting one is the lie
+
+`[:us]` is in the catalog with **one facet of eight**. Counting it as a
+covered jurisdiction is true and misleading. So the answer carries both:
+
+```clojure
+(world-coverage #{[:jp] [:us] [:eu] [:de] [:fr] [:sg] [:gb]})
+;; :taxlaw/read          [[:eu] [:jp] [:us]]        3 of 7 jurisdictions
+;; :taxlaw/depth         {[:us] {:read 1 :of 8} …}
+;; :taxlaw/facet-total   {:read 12 :of 56}          the figure that does not flatter
+```
+
+12/56 is lower than 3/7, which is the point of reporting it.
+
+### Four buckets, and the one that matters is `:silent`
+
+`depth` partitions the eight facets into `:read`, `:partly-read`,
+`:out-of-scope` and `:silent`, and a test asserts they sum to `:of` for every
+jurisdiction. That assertion earned itself immediately: the first version had
+two buckets and `[:eu]` came back **3 + 6 = 9 out of 8**, because a facet can
+be both — the EU's `:jurisdiction/electronic-transaction` was read from
+Articles 218/246, and the sub-question *must the holder preserve the
+electromagnetic record* is separately out of scope. Two buckets could not say
+that, so they double-counted it.
+
+**`:silent` is a facet nobody has thought about.** From every other view it is
+identical to one deliberately left out — `credit-support` answers `:none` for
+both, correctly, because neither is a pass. This is the view that tells them
+apart, and the difference is whether there is a decision behind the absence.
+All three catalogued jurisdictions currently have **zero** silent facets;
+every absence is recorded.
+
 ## Three jurisdictions, and mostly what two of them do not say
 
 | | read from source | notably absent |

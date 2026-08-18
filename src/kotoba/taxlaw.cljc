@@ -67,7 +67,8 @@
   opinion. The withholding facet checks that a payroll record *accounts for*
   withheld income tax; it does not check the amount, because 所得税法 別表第二
   / 別表第五 were not read. Every result says so in `:taxlaw/amount-checked?`."
-  (:require [clojure.string :as str]))
+  (:require [clojure.set]
+            [clojure.string :as str]))
 
 ;; ---------------------------------------------------------------------------
 ;; sources
@@ -1299,6 +1300,143 @@
   [j invoice]
   (let [r (consumption-tax-amount j invoice)]
     (when (= :checked (:taxlaw/coverage r)) (:taxlaw/tax r))))
+
+;; ---------------------------------------------------------------------------
+;; How much of the world is this?
+;; ---------------------------------------------------------------------------
+
+(def facet-universe
+  "Every facet this catalog knows how to hold, whether or not any
+  jurisdiction has one. The denominator for *depth*.
+
+  Derived from the functions, not hand-listed, so a facet added without a
+  line here cannot go uncounted — the same reason
+  `no-refusal-drops-a-reason-that-was-recorded` enumerates the API against
+  `ns-publics` instead of trusting a list."
+  #{:jurisdiction/input-tax-credit
+    :jurisdiction/retention
+    :jurisdiction/electronic-transaction
+    :jurisdiction/qualified-invoice-tax-amount
+    :jurisdiction/book-search
+    :jurisdiction/electronic-transaction-search
+    :jurisdiction/wage-withholding
+    :jurisdiction/year-end-adjustment})
+
+(defn depth
+  "How many of `facet-universe` this jurisdiction has read, and how many it
+  deliberately left out.
+
+      {:taxlaw/read 8 :taxlaw/out-of-scope 0 :taxlaw/silent 0 :taxlaw/of 8}
+
+  **Four disjoint buckets that sum to `:of`**, and the arithmetic is asserted
+  rather than assumed. The first version reported `read` and `out-of-scope`
+  as separate counts and `[:eu]` came back 3 + 6 = 9 out of 8, because a
+  facet can be **both**: the EU's `:jurisdiction/electronic-transaction` was
+  read from Articles 218/246, and the sub-question *must the holder preserve
+  the electromagnetic record* is separately recorded as out of scope. Two
+  buckets could not say that, so they double-counted it.
+
+    :read          read, with nothing about it left out
+    :partly-read   the facet was read AND a sub-question is out of scope
+    :out-of-scope  not read, and recorded as deliberately not read
+    :silent        neither. Nobody has thought about it.
+
+  **`:silent` is the one that matters.** A silent facet and an out-of-scope
+  one look identical from every other view — `credit-support` answers
+  `:none` for both, correctly, because neither is a pass. This is the view
+  that tells them apart, and the difference is whether there is a decision
+  behind the absence."
+  [j]
+  (let [m (jurisdiction j)
+        oos (clojure.set/intersection (set (keys (:jurisdiction/out-of-scope m)))
+                                      facet-universe)
+        present (into #{} (filter #(contains? m %)) facet-universe)
+        both (clojure.set/intersection present oos)
+        read-only (clojure.set/difference present oos)
+        oos-only (clojure.set/difference oos present)
+        silent (clojure.set/difference facet-universe present oos)]
+    {:taxlaw/read (count read-only)
+     :taxlaw/partly-read (count both)
+     :taxlaw/out-of-scope (count oos-only)
+     :taxlaw/silent (count silent)
+     :taxlaw/of (count facet-universe)
+     :taxlaw/partly-read-facets (vec (sort both))
+     :taxlaw/silent-facets (vec (sort silent))}))
+
+(defn world-coverage
+  "How much of `universe` this catalog has read.
+
+  `universe` is the set of jurisdiction paths that exist for the caller's
+  purpose — `#{[:jp] [:us] [:de] …}`. **It is required and has no default**,
+  and that is the whole design of this function.
+
+  ## Why a catalog cannot state its own coverage
+
+  With three jurisdictions read and three jurisdictions known, the honest
+  arithmetic is `3/3`, and `100%` is what a reader takes away. The
+  denominator has to come from outside, because the thing being measured is
+  exactly *what this catalog does not know about*. A catalog counting itself
+  is the same defect as a checker whose corpus is missing reporting zero
+  problems, and this workspace has now found that shape in sixteen places.
+
+  ## Why not depend on `kotoba-lang/iso3166`
+
+  It would be the obvious denominator — 193 UN member states, and portable
+  as of 2026-08-18. But `deps.edn` here says this library is deliberately
+  dependency-free so that an actor needing to know what a tax record must
+  carry does not thereby acquire anything else, and a universe is a caller's
+  question anyway: a firm trading in four countries has a universe of four,
+  not 193, and `4/4` is a true and useful answer that 193 would bury.
+
+  So the caller passes it, and `iso3166` is one place to get it. Note the key
+  spaces differ — this catalog keys `[:jp]`, iso3166 keys `\"JPN\"` — so a
+  caller bridging them supplies the mapping, visibly, rather than this
+  library guessing at one.
+
+  ## Coverage has two dimensions and reporting one is the lie
+
+  `[:us]` is in this catalog with **one** facet read of eight. Counting it
+  as a covered jurisdiction is true and misleading. So `:taxlaw/read` lists
+  jurisdictions with at least one facet, `:taxlaw/depth` gives each one's
+  facet count, and `:taxlaw/facet-total` is the honest overall figure —
+  facets read across the universe, over facets the universe could have."
+  [universe]
+  (let [u (set (map normalize universe))]
+    (if (empty? u)
+      {:taxlaw/coverage :not-declared
+       :taxlaw/why (str "a universe of jurisdictions is required. This catalog "
+                        "cannot state its own coverage: with three read and "
+                        "three known the arithmetic is 3/3, and the "
+                        "denominator has to come from outside because what is "
+                        "being measured is what this catalog does not know "
+                        "about")}
+      (let [touched? (fn [j] (let [d (depth j)]
+                               (pos? (+ (:taxlaw/read d) (:taxlaw/partly-read d)))))
+            read (into #{} (filter touched?) u)
+            unread (clojure.set/difference u read)
+            depths (into {} (map (juxt identity depth)) read)]
+        {:taxlaw/coverage :checked
+         :taxlaw/universe-size (count u)
+         :taxlaw/read (vec (sort-by str read))
+         :taxlaw/unread-count (count unread)
+         :taxlaw/unread (vec (sort-by str unread))
+         :taxlaw/depth (into {} (map (fn [[k v]] [k (select-keys v [:taxlaw/read :taxlaw/partly-read :taxlaw/of])])) depths)
+         ;; facets read across the universe, over facets the universe could
+         ;; have had. The figure that does not flatter.
+         ;; A partly-read facet counts as read here: the article WAS read,
+         ;; and what is out of scope is a question inside it. Counting it as
+         ;; unread would understate by exactly as much as counting it twice
+         ;; overstated.
+         :taxlaw/facet-total {:read (reduce + 0 (map (fn [[_ d]] (+ (:taxlaw/read d)
+                                                                    (:taxlaw/partly-read d)))
+                                                     depths))
+                              :of (* (count u) (count facet-universe))}
+         ;; jurisdictions in the catalog but NOT in the caller's universe.
+         ;; Not an error — a universe of four countries legitimately excludes
+         ;; the rest — but a caller that expected its universe to contain
+         ;; everything read should see it.
+         :taxlaw/outside-universe
+         (vec (sort-by str (clojure.set/difference (set (keys jurisdictions)) u)))}))))
 
 ;; ---------------------------------------------------------------------------
 ;; 検索要件 — 規則第五条第五項第一号ハ (帳簿) and 規則第二条第六項第五号 (電子取引)
