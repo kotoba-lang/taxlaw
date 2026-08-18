@@ -138,7 +138,8 @@
 
 (deftest the-verification-record-lists-every-read-claim
   (let [claims (:catalog/content-verified taxlaw/catalog-verification)]
-    (is (= 6 (count claims)))
+    (is (= 7 (count claims)))
+    (is (some #(= :qualified-invoice-tax-amount-calculation (:claim %)) claims))
     (is (some #(= :electronic-transaction-record-preservation (:claim %)) claims))
     (is (some #(= :book-search-function-for-preferential-treatment (:claim %)) claims))
     (is (some #(= :electronic-transaction-search-function (:claim %)) claims))
@@ -697,3 +698,139 @@
       (is (nil? (:taxlaw/exemption r)) "neither exemption is reached")
       (is (= #{:record-items :range :combination} (:taxlaw/missing r))
           "all three, because no exemption dropped any of them"))))
+
+;; ---------------------------------------------------------------------------
+;; 消費税額等 — 消費税法施行令 第七十条の十
+;;
+;; The article settles three things that a naive implementation gets wrong:
+;; the multiplication is on the per-rate subtotal and not per line, the
+;; rounding happens once on that figure, and the article does not say which
+;; way to round. The tests below are mostly about the third — a library that
+;; picks a direction is wrong by ¥1 per rate on every invoice, forever, and
+;; nothing in its output says so.
+;; ---------------------------------------------------------------------------
+
+(def ^:private inv
+  {:method :tax-exclusive :rounding :floor :subtotals {:standard 33333}})
+
+(deftest neither-the-method-nor-the-rounding-is-defaulted
+  (testing "「いずれかとする」 and 「端数を処理するものとする」 are both choices
+            the article hands the issuer"
+    (let [no-method (taxlaw/consumption-tax-amount [:jp] (dissoc inv :method))]
+      (is (= :not-declared (:taxlaw/coverage no-method)))
+      (is (= #{:tax-exclusive :tax-inclusive} (:taxlaw/choices no-method))))
+    (let [no-round (taxlaw/consumption-tax-amount [:jp] (dissoc inv :rounding))]
+      (is (= :not-declared (:taxlaw/coverage no-round)))
+      (is (= #{:floor :ceil :round-half-up} (:taxlaw/choices no-round))))
+    (testing "and nil comes back, not 0 — 0 is a real tax amount"
+      (is (nil? (taxlaw/consumption-tax [:jp] (dissoc inv :rounding)))))))
+
+(deftest a-method-the-article-does-not-offer-is-refused
+  (let [r (taxlaw/consumption-tax-amount [:jp] (assoc inv :method :per-line))]
+    (is (= :not-declared (:taxlaw/coverage r)))
+    (is (str/includes? (:taxlaw/why r) ":per-line"))))
+
+(deftest the-two-methods-are-the-two-the-article-names
+  (testing "第一号 税抜 33,333 x 10/100 = 3,333.3"
+    (is (= 3333 (taxlaw/consumption-tax [:jp] inv)))
+    (is (= 3334 (taxlaw/consumption-tax [:jp] (assoc inv :rounding :ceil))))
+    (is (= 3333 (taxlaw/consumption-tax [:jp] (assoc inv :rounding :round-half-up)))))
+  (testing "第二号 税込 33,333 x 10/110 = 3,030.27…"
+    (let [i (assoc inv :method :tax-inclusive)]
+      (is (= 3030 (taxlaw/consumption-tax [:jp] i)))
+      (is (= 3031 (taxlaw/consumption-tax [:jp] (assoc i :rounding :ceil))))))
+  (testing "軽減税率 — 8/100 税抜 and 8/108 税込"
+    (is (= 2666 (taxlaw/consumption-tax [:jp] (assoc inv :subtotals {:reduced 33333}))))
+    (is (= 2469 (taxlaw/consumption-tax
+                 [:jp] (assoc inv :method :tax-inclusive :subtotals {:reduced 33333}))))))
+
+(deftest rounding-half-up-turns-on-the-half-and-not-on-anything-else
+  (testing "税抜 x 10/100 — the remainder is the last digit, so 5 is the hinge"
+    (is (= 100 (taxlaw/consumption-tax
+                [:jp] {:method :tax-exclusive :rounding :round-half-up
+                       :subtotals {:standard 1004}})))
+    (is (= 101 (taxlaw/consumption-tax
+                [:jp] {:method :tax-exclusive :rounding :round-half-up
+                       :subtotals {:standard 1005}})))))
+
+(deftest an-exact-figure-is-not-touched-by-any-policy
+  (testing "「一円未満の端数が生じたときは」— when none arises, nothing is processed"
+    (doseq [p [:floor :ceil :round-half-up]]
+      (is (= 1000 (taxlaw/consumption-tax
+                   [:jp] {:method :tax-exclusive :rounding p
+                          :subtotals {:standard 10000}}))
+          (str "under " p)))))
+
+(deftest the-rounding-happens-once-per-rate-and-not-once-per-line
+  (testing "the article multiplies 税率の異なるごとに区分して合計した金額 —
+            three ¥333 lines are one ¥999 subtotal, not three roundings"
+    (let [one-subtotal (taxlaw/consumption-tax
+                        [:jp] {:method :tax-exclusive :rounding :floor
+                               :subtotals {:standard 999}})
+          per-line (* 3 (taxlaw/consumption-tax
+                         [:jp] {:method :tax-exclusive :rounding :floor
+                                :subtotals {:standard 333}}))]
+      (is (= 99 one-subtotal))
+      (is (= 99 per-line) "these happen to agree here")))
+  (testing "and here they do not — which is why the shape of the input matters"
+    (let [one-subtotal (taxlaw/consumption-tax
+                        [:jp] {:method :tax-exclusive :rounding :ceil
+                               :subtotals {:standard 999}})
+          per-line (* 3 (taxlaw/consumption-tax
+                         [:jp] {:method :tax-exclusive :rounding :ceil
+                                :subtotals {:standard 333}}))]
+      (is (= 100 one-subtotal))
+      (is (= 102 per-line))
+      (is (not= one-subtotal per-line)
+          "a function taking lines could not have told these apart"))))
+
+(deftest the-two-rates-are-summed-after-each-is-rounded-on-its-own
+  (let [r (taxlaw/consumption-tax-amount
+           [:jp] {:method :tax-exclusive :rounding :floor
+                  :subtotals {:standard 1234 :reduced 5678}})]
+    (is (= :checked (:taxlaw/coverage r)))
+    (is (= {:standard 123 :reduced 454} (:taxlaw/tax-by-category r)))
+    (is (= 577 (:taxlaw/tax r)))
+    (is (= :tax-category-subtotal (:taxlaw/rounds-per r)))))
+
+(deftest a-tax-category-the-article-does-not-name-is-refused-not-assumed
+  (let [r (taxlaw/consumption-tax-amount
+           [:jp] (assoc inv :subtotals {:standard 1000 :export 5000}))]
+    (is (= :not-declared (:taxlaw/coverage r)))
+    (is (= #{:export} (:taxlaw/unknown-categories r)))
+    (is (nil? (taxlaw/consumption-tax
+               [:jp] (assoc inv :subtotals {:standard 1000 :export 5000})))
+        "and it does not quietly return the tax on the part it understood")))
+
+(deftest a-negative-subtotal-is-refused-rather-than-rounded-backwards
+  (testing "quot truncates toward zero, so :floor on a negative rounds UP and
+            does it silently. 返還インボイス is governed elsewhere"
+    (let [r (taxlaw/consumption-tax-amount [:jp] (assoc inv :subtotals {:standard -1000}))]
+      (is (= :not-declared (:taxlaw/coverage r)))
+      (is (= #{:standard} (:taxlaw/rejected r))))
+    (testing "a non-integer subtotal too — no float ever holds a tax figure"
+      (is (nil? (taxlaw/consumption-tax [:jp] (assoc inv :subtotals {:standard 1000.5})))))))
+
+(deftest an-empty-subtotal-map-is-a-real-zero-and-says-so
+  (let [r (taxlaw/consumption-tax-amount [:jp] (assoc inv :subtotals {}))]
+    (is (= :checked (:taxlaw/coverage r)) "nothing was taxable; that is an answer")
+    (is (= 0 (:taxlaw/tax r)))
+    (is (= 0 (taxlaw/consumption-tax [:jp] (assoc inv :subtotals {})))
+        "and 0 is distinguishable from the nil that means `could not answer`")))
+
+(deftest the-article-is-recorded-as-read-with-its-omission-named
+  (let [rule (get-in taxlaw/jurisdictions [[:jp] :jurisdiction/qualified-invoice-tax-amount])]
+    (is (= :read-from-source (:rule/review rule)))
+    (is (= "消費税法施行令 第七十条の十" (:rule/provision rule)))
+    (is (true? (:rule/quote-is-partial? rule)))
+    (is (not (str/blank? (:rule/quote-omits rule))))
+    (is (true? (:rule/rounding-is-issuers-choice? rule)))
+    (testing "the four rate pairs are the ones in the text"
+      (is (= {:standard [10 100] :reduced [8 100]}
+             (dissoc (get-in rule [:rule/methods :tax-exclusive]) :statute)))
+      (is (= {:standard [10 110] :reduced [8 108]}
+             (dissoc (get-in rule [:rule/methods :tax-inclusive]) :statute))))))
+
+(deftest an-uncatalogued-jurisdiction-gets-no-tax-figure
+  (is (= :none (:taxlaw/coverage (taxlaw/consumption-tax-amount [:zz] inv))))
+  (is (nil? (taxlaw/consumption-tax [:zz] inv))))

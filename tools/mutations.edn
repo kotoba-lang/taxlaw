@@ -4,18 +4,15 @@
 ;;
 ;; ## SCOPE — this table does not cover the whole library
 ;;
-;; It covers the 検索要件 pair: `book-search` (規則第五条第五項第一号ハ) and
-;; `electronic-transaction-search` (規則第二条第六項第五号 as imported by
-;; 第四条第一項). The invoice, retention, preservation, withholding and
-;; year-end-adjustment facets have suites but no mutations here, so a clean
-;; run of this table means "every invariant of the SEARCH pair is measured"
-;; and NOT "every invariant of taxlaw is measured". Reading it as the second
-;; would be the defect the harness exists to catch: a check that did not look
-;; reporting the same value as one that looked and found nothing.
-;;
-;; The invariants worth breaking here are almost all about REFUSING to
-;; answer. A compliance library whose unknown-input path returns the same
-;; value as its everything-checked path is one nobody can act on.
+;; It covers two facets: the 検索要件 pair (`book-search` /
+;; `electronic-transaction-search`) and 消費税額等 (`consumption-tax-amount`,
+;; 消費税法施行令 第七十条の十). The invoice-registration, retention,
+;; preservation, withholding and year-end-adjustment facets have suites but
+;; no mutations here, so a clean run means "every invariant of THOSE TWO
+;; facets is measured" and NOT "every invariant of taxlaw is measured".
+;; Reading it as the second would be the defect the harness exists to catch:
+;; a check that did not look reporting the same value as one that looked and
+;; found nothing.
 [{:id :undeclared-claim-is-not-a-pass
   :invariant "books that do not say whether they claim 法第八条第四項 get :not-declared"
   :file "src/kotoba/taxlaw.cljc"
@@ -104,4 +101,79 @@
   :invariant "book-search-adequate? is false for :none and :not-declared"
   :file "src/kotoba/taxlaw.cljc"
   :find "  (true? (:taxlaw/adequate? (book-search j books))))"
-  :replace "  (not (false? (:taxlaw/adequate? (book-search j books)))))"}]
+  :replace "  (not (false? (:taxlaw/adequate? (book-search j books)))))"}
+
+ ;; --- 消費税額等, 施行令 第七十条の十 ---
+
+ {:id :the-method-is-not-defaulted
+  :invariant "「いずれかとする」 — the issuer picks, so the library does not"
+  :file "src/kotoba/taxlaw.cljc"
+  :find "      (nil? (get methods method))"
+  :replace "      (nil? (get methods (or method :tax-exclusive)))"}
+
+ {:id :the-rounding-is-not-defaulted
+  :invariant "the article says 端数を処理する and names no direction"
+  :file "src/kotoba/taxlaw.cljc"
+  :find "      (not (contains? (:rule/rounding-policies rule) rounding))"
+  :replace "      (not (contains? (:rule/rounding-policies rule) (or rounding :floor)))"}
+
+ {:id :floor-and-ceil-are-different
+  :invariant "an inexact figure moves under :ceil and does not under :floor"
+  :file "src/kotoba/taxlaw.cljc"
+  :find "            (= :ceil policy) (inc q)"
+  :replace "            (= :ceil policy) q"}
+
+ {:id :half-up-turns-on-the-half
+  :invariant "「四捨五入」 — 5 rounds up, 4 does not"
+  :file "src/kotoba/taxlaw.cljc"
+  :find "            (= :round-half-up policy) (if (>= (* 2 r) den) (inc q) q)"
+  :replace "            (= :round-half-up policy) (if (> (* 2 r) den) (inc q) q)"}
+
+ {:id :an-exact-figure-is-left-alone
+  :invariant "「端数が生じたときは」 — when none arises, nothing is processed"
+  :file "src/kotoba/taxlaw.cljc"
+  :find "      (cond (zero? r) q\n            (= :floor policy) q"
+  :replace "      (cond (zero? r) (inc q)\n            (= :floor policy) q"}
+
+ {:id :a-negative-subtotal-is-refused
+  :invariant "quot truncates toward zero; :floor on a negative rounds UP"
+  :file "src/kotoba/taxlaw.cljc"
+  :find "  (when (and (integer? num) (>= num 0) (pos? den))"
+  :replace "  (when (and (number? num) (pos? den))"}
+
+ {:id :an-unknown-tax-category-is-refused
+  :invariant "refusing to treat an unread category as 標準 or 軽減"
+  :file "src/kotoba/taxlaw.cljc"
+  :find "      (seq (remove known (keys subtotals)))"
+  :replace "      (seq (remove some? (keys subtotals)))"}
+
+ {:id :the-reduced-rate-is-not-the-standard-rate
+  :invariant "軽減税率 8/100 and 8/108, read off the text"
+  :file "src/kotoba/taxlaw.cljc"
+  :find "     {:tax-exclusive {:statute \"第一号（税抜価額）\"\n                      :standard [10 100] :reduced [8 100]}"
+  :replace "     {:tax-exclusive {:statute \"第一号（税抜価額）\"\n                      :standard [10 100] :reduced [10 100]}"}
+
+ {:id :tax-inclusive-divides-by-110-not-100
+  :invariant "第二号 税込 — 百十分の十, not 百分の十"
+  :file "src/kotoba/taxlaw.cljc"
+  :find "                      :standard [10 110] :reduced [8 108]}"
+  :replace "                      :standard [10 100] :reduced [8 108]}"}
+
+ ;; A 26th was written and REMOVED, with the reason, because deleting one to
+ ;; make a table clean is the thing this harness exists to prevent and the
+ ;; reason must therefore survive the deletion:
+ ;;
+ ;;   :a-refusal-yields-nil-and-never-a-partial-figure — dropping the
+ ;;   `(= :checked ...)` guard in `consumption-tax` reddened nothing, and it
+ ;;   turned out to be a semantic no-op: every refusal map lacks
+ ;;   `:taxlaw/tax`, so `(:taxlaw/tax r)` is nil on all of them anyway. The
+ ;;   guard is correct and cheap and stays, but it is structural defence
+ ;;   against a future refusal branch, NOT an invariant anything can observe
+ ;;   today, and claiming it as one would be the same overreach as a green
+ ;;   check that never ran.
+
+ {:id :an-empty-invoice-is-a-real-zero-not-a-refusal
+  :invariant "0 tax is an answer; it must not be what `could not answer` looks like"
+  :file "src/kotoba/taxlaw.cljc"
+  :find "      (not (map? subtotals))"
+  :replace "      (not (seq subtotals))"}]
