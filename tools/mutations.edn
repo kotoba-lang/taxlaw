@@ -252,4 +252,40 @@
   :invariant "the Directive hands answers down; [:eu :de] is not [:eu]"
   :file "src/kotoba/taxlaw.cljc"
   :find "  [jurisdiction]\n  (contains? jurisdictions (normalize jurisdiction)))"
-  :replace "  [jurisdiction]\n  (let [p (normalize jurisdiction)]\n    (boolean (some #(contains? jurisdictions (vec (take % p))) (range 1 (inc (count p)))))))"}]
+  :replace "  [jurisdiction]\n  (let [p (normalize jurisdiction)]\n    (boolean (some #(contains? jurisdictions (vec (take % p))) (range 1 (inc (count p)))))))"}
+
+ ;; --- every refusal carries its reason (2026-08-18). Found by a downstream
+ ;; consumer, not by this suite: `uncovered` was introduced with the per-facet
+ ;; fix and the three functions written AFTER it kept building their :none map
+ ;; inline. Fixing the three is not the fix; these mutations measure that a
+ ;; fourth cannot be added with the same hole. ---
+
+ {:id :consumption-tax-refusal-carries-its-reason
+  :invariant "the newest function routes through `uncovered` like the rest"
+  :file "src/kotoba/taxlaw.cljc"
+  :find "      (uncovered path :jurisdiction/qualified-invoice-tax-amount)"
+  :replace "      {:taxlaw/coverage :none :taxlaw/unchecked [path]}"}
+
+ {:id :book-search-refusal-carries-its-reason
+  :invariant "same, for 規則第五条第五項第一号ハ"
+  :file "src/kotoba/taxlaw.cljc"
+  :find "      (uncovered path :jurisdiction/book-search)"
+  :replace "      {:taxlaw/coverage :none :taxlaw/unchecked [path]}"}
+
+ {:id :electronic-search-refusal-carries-its-reason
+  :invariant "same, for 規則第四条第一項"
+  :file "src/kotoba/taxlaw.cljc"
+  :find "      (uncovered path :jurisdiction/electronic-transaction-search)"
+  :replace "      {:taxlaw/coverage :none :taxlaw/unchecked [path]}"}
+
+ {:id :a-recorded-reason-actually-reaches-the-caller
+  :invariant "`uncovered` attaches it rather than merely looking it up"
+  :file "src/kotoba/taxlaw.cljc"
+  :find "      why (assoc :taxlaw/out-of-scope f :taxlaw/why why))))"
+  :replace "      why (assoc :taxlaw/out-of-scope f))))"}
+
+ {:id :an-unrecorded-reason-invents-no-key
+  :invariant "absent a reason, the refusal is the refusal it always was"
+  :file "src/kotoba/taxlaw.cljc"
+  :find "    (cond-> {:taxlaw/coverage :none :taxlaw/unchecked [path]}\n      why (assoc :taxlaw/out-of-scope f"
+  :replace "    (cond-> {:taxlaw/coverage :none :taxlaw/unchecked [path]}\n      true (assoc :taxlaw/out-of-scope f"}]
