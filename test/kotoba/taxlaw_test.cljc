@@ -138,8 +138,10 @@
 
 (deftest the-verification-record-lists-every-read-claim
   (let [claims (:catalog/content-verified taxlaw/catalog-verification)]
-    (is (= 4 (count claims)))
+    (is (= 6 (count claims)))
     (is (some #(= :electronic-transaction-record-preservation (:claim %)) claims))
+    (is (some #(= :book-search-function-for-preferential-treatment (:claim %)) claims))
+    (is (some #(= :electronic-transaction-search-function (:claim %)) claims))
     (is (some #(= :employment-income-withholding-obligation (:claim %)) claims))
     (is (some #(= :year-end-adjustment (:claim %)) claims))
     (testing "read claims are still strictly fewer than sources"
@@ -522,3 +524,176 @@
   (is (= "2028-04-29" (:taxlaw/retain-from
                        (taxlaw/retention [:jp] {:fiscal-year-end "2028-02-28"
                                                 :blue-return? true})))))
+
+;; ---------------------------------------------------------------------------
+;; 検索要件 — 規則第五条第五項第一号ハ (帳簿) and 規則第二条第六項第五号 (電子取引)
+;;
+;; Two regimes with different requirements and different exemptions. The
+;; tests below are mostly about what these functions REFUSE to answer: both
+;; requirements turn on facts about the holder that no library observes, and
+;; the failure mode this catalog exists to prevent is a compliance answer
+;; that reads as a pass because nobody could check it.
+;; ---------------------------------------------------------------------------
+
+(def ^:private full-search
+  {:searchable-by #{:transaction-date :amount :counterparty}
+   :range-search? true :combination-search? true})
+
+(deftest the-book-search-requirement-is-not-a-duty-and-does-not-say-it-is
+  (testing "規則第五条第五項第一号ハ attaches to 法第八条第四項 — ordinary
+            electronic preservation under 法第四条第一項 requires no search"
+    (is (= :claiming-preferential-treatment (taxlaw/requires-book-search? [:jp]))
+        "a keyword, not true — whether it bites is the holder's decision")
+    (is (nil? (taxlaw/requires-book-search? [:zz])))))
+
+(deftest not-claiming-the-benefit-is-not-the-same-as-satisfying-the-rule
+  (let [r (taxlaw/book-search [:jp] (assoc full-search
+                                           :claiming-preferential-treatment? false))]
+    (is (= :checked (:taxlaw/coverage r)))
+    (is (false? (:taxlaw/search-required? r)))
+    (is (nil? (:taxlaw/adequate? r))
+        "nil, not true — `the rule does not reach you` is not `you satisfy it`")
+    (is (not (taxlaw/book-search-adequate? [:jp]
+                                           (assoc full-search
+                                                  :claiming-preferential-treatment? false))))))
+
+(deftest books-that-do-not-say-what-they-are-claiming-get-no-answer
+  (let [r (taxlaw/book-search [:jp] full-search)]
+    (is (= :not-declared (:taxlaw/coverage r)))
+    (is (nil? (:taxlaw/adequate? r)))
+    (is (not (taxlaw/book-search-adequate? [:jp] full-search))
+        "a system that can search everything still has not established that
+         the requirement was met, because nobody said it applied")))
+
+(deftest the-three-record-items-are-the-ones-the-provision-names
+  (let [claiming (assoc full-search :claiming-preferential-treatment? true)]
+    (is (taxlaw/book-search-adequate? [:jp] claiming))
+    (testing "each 記録項目 is load-bearing on its own"
+      (doseq [item [:transaction-date :amount :counterparty]]
+        (let [r (taxlaw/book-search
+                 [:jp] (update claiming :searchable-by disj item))]
+          (is (false? (:taxlaw/adequate? r)) (str "missing " item))
+          (is (= #{:record-items} (:taxlaw/missing r))))))
+    (testing "（２）range and （３）combination are separate failures"
+      (is (= #{:range} (:taxlaw/missing (taxlaw/book-search
+                                         [:jp] (assoc claiming :range-search? false)))))
+      (is (= #{:combination} (:taxlaw/missing
+                              (taxlaw/book-search
+                               [:jp] (assoc claiming :combination-search? false))))))))
+
+(deftest an-electronic-transaction-setup-that-hides-the-deciding-fact-gets-no-answer
+  (testing "both exemptions in 規則第四条第一項 turn on whether the holder can
+            respond to 電磁的記録の提示等の要求"
+    (let [r (taxlaw/electronic-transaction-search [:jp] full-search)]
+      (is (= :not-declared (:taxlaw/coverage r)))
+      (is (not (taxlaw/electronic-transaction-search-adequate? [:jp] full-search))))))
+
+(deftest producing-on-demand-drops-range-and-combination-but-not-the-items
+  (let [base (assoc full-search :can-produce-on-demand? true)]
+    (testing "ロ and ハ drop, so a system with neither still passes"
+      (let [r (taxlaw/electronic-transaction-search
+               [:jp] (assoc base :range-search? false :combination-search? false))]
+        (is (= :checked (:taxlaw/coverage r)))
+        (is (true? (:taxlaw/adequate? r)))
+        (is (= :on-demand-production (:taxlaw/exemption r)))))
+    (testing "イ does not drop"
+      (let [r (taxlaw/electronic-transaction-search
+               [:jp] (update base :searchable-by disj :counterparty))]
+        (is (= #{:record-items} (:taxlaw/missing r)))))))
+
+(deftest the-wider-exemption-needs-both-legs-and-says-so-when-one-is-unstated
+  (let [cannot-search {:searchable-by #{} :range-search? false
+                       :combination-search? false :can-produce-on-demand? true}]
+    (testing "under the 五千万円 ceiling, the whole of 第五号 drops"
+      (let [r (taxlaw/electronic-transaction-search
+               [:jp] (assoc cannot-search :base-period-sales-yen 49999999))]
+        (is (true? (:taxlaw/adequate? r)))
+        (is (false? (:taxlaw/search-required? r)))
+        (is (= :small-holder-or-organized-paper (:taxlaw/exemption r)))))
+    (testing "organized paper output reaches the same exemption"
+      (is (true? (:taxlaw/adequate?
+                  (taxlaw/electronic-transaction-search
+                   [:jp] (assoc cannot-search :paper-output-organized? true))))))
+    (testing "over the ceiling and no paper, it is a real failure"
+      (let [r (taxlaw/electronic-transaction-search
+               [:jp] (assoc cannot-search :base-period-sales-yen 50000001
+                            :paper-output-organized? false))]
+        (is (= :checked (:taxlaw/coverage r)))
+        (is (false? (:taxlaw/adequate? r)))
+        (is (= #{:record-items} (:taxlaw/missing r)))))
+    (testing "the ceiling is 以下, so exactly 五千万円 is inside it"
+      (is (true? (:taxlaw/adequate?
+                  (taxlaw/electronic-transaction-search
+                   [:jp] (assoc cannot-search :base-period-sales-yen 50000000))))))
+    (testing "but with the sales figure unstated it refuses rather than failing —
+              `you fail` and `you did not state the deciding fact` are different"
+      (let [r (taxlaw/electronic-transaction-search [:jp] cannot-search)]
+        (is (= :not-declared (:taxlaw/coverage r)))
+        (is (nil? (:taxlaw/adequate? r)))
+        (is (= #{:record-items} (:taxlaw/missing r))
+            "it still says what is missing — refusing to conclude is not
+             refusing to inform")))))
+
+(deftest a-passing-setup-never-needs-the-unstated-fact
+  (testing "if イ is satisfied and the records can be produced on demand, the
+            sales figure could only have helped, and nothing needed helping"
+    (let [r (taxlaw/electronic-transaction-search
+             [:jp] (assoc full-search :can-produce-on-demand? true))]
+      (is (= :checked (:taxlaw/coverage r)))
+      (is (true? (:taxlaw/adequate? r))))))
+
+(deftest neither-search-rule-applies-to-an-uncatalogued-jurisdiction
+  (doseq [f [taxlaw/book-search taxlaw/electronic-transaction-search]]
+    (let [r (f [:zz] full-search)]
+      (is (= :none (:taxlaw/coverage r)))
+      (is (= [[:zz]] (:taxlaw/unchecked r))))))
+
+(deftest the-two-regimes-are-catalogued-apart-and-quote-different-text
+  (testing "帳簿 reads 「取引年月日、取引金額及び取引先」; 書類/電子取引 reads
+            「取引年月日その他の日付、…」 — one phrase apart, and recorded as read"
+    (let [b (get-in taxlaw/jurisdictions [[:jp] :jurisdiction/book-search])
+          e (get-in taxlaw/jurisdictions [[:jp] :jurisdiction/electronic-transaction-search])]
+      (is (not= (:rule/provision b) (:rule/provision e)))
+      (is (str/includes? (:rule/quote b) "取引年月日、取引金額及び取引先"))
+      (is (str/includes? (:rule/quote e) "取引年月日その他の日付"))
+      (is (not (str/includes? (:rule/quote b) "その他の日付"))
+          "the 帳簿 provision does not carry that phrase and the catalog must
+           not lend it one")
+      (is (= 50000000 (:rule/small-holder-sales-ceiling-yen e)))
+      (is (nil? (:rule/small-holder-sales-ceiling-yen b))
+          "the 帳簿 regime has no sales ceiling; inventing one would be the
+           conflation this pair of rules exists to prevent")
+      (doseq [r [b e]]
+        (is (= :read-from-source (:rule/review r)))
+        (is (= "2026-08-18" (:rule/retrieved-at r)))))))
+
+(deftest a-holder-that-cannot-produce-on-demand-owes-all-three
+  (testing "every earlier test here says :can-produce-on-demand? true or
+            leaves it unstated. The tier where NO exemption applies is the
+            base case of 規則第二条第六項第五号 and nothing had exercised it"
+    (let [base (assoc full-search :can-produce-on-demand? false)]
+      (is (true? (:taxlaw/adequate?
+                  (taxlaw/electronic-transaction-search [:jp] base))))
+      (doseq [[k missing] [[:range-search? :range]
+                           [:combination-search? :combination]]]
+        (let [r (taxlaw/electronic-transaction-search [:jp] (assoc base k false))]
+          (is (= :checked (:taxlaw/coverage r))
+              "no exemption is in play, so nothing is undecidable here")
+          (is (false? (:taxlaw/adequate? r)))
+          (is (= #{missing} (:taxlaw/missing r))))))))
+
+(deftest the-wider-exemption-does-not-work-on-sales-alone
+  (testing "規則第四条第一項 grants it to a holder that can respond to
+            電磁的記録の提示等の要求 AND is under the ceiling — being small
+            is not, by itself, an exemption from anything"
+    (let [r (taxlaw/electronic-transaction-search
+             [:jp] {:searchable-by #{} :range-search? false
+                    :combination-search? false
+                    :can-produce-on-demand? false
+                    :base-period-sales-yen 1000000
+                    :paper-output-organized? true})]
+      (is (= :checked (:taxlaw/coverage r)) "both legs are stated, so it is decidable")
+      (is (false? (:taxlaw/adequate? r)))
+      (is (nil? (:taxlaw/exemption r)) "neither exemption is reached")
+      (is (= #{:record-items :range :combination} (:taxlaw/missing r))
+          "all three, because no exemption dropped any of them"))))

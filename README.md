@@ -138,6 +138,60 @@ nothing was asserted and nothing was checked. Printing an electronic
 transaction and keeping the paper is the case the article addresses: the
 obligation is to preserve the 電磁的記録 itself.
 
+## 検索要件 — two regimes, and neither of them is a plain duty
+
+電子帳簿保存法施行規則, read 2026-08-18 from `GET /api/2/law_data/410M50000040043`
+(revision `410M50000040043_20250401_507M60000040028`). A 帳簿 and an electronic
+transaction record are governed by **different provisions with different search
+requirements**, and treating them as one rule is the easy mistake here.
+
+| | 帳簿 | 電子取引 |
+|---|---|---|
+| provision | 規則第五条第五項第一号ハ | 規則第四条第一項 → 第二条第六項第五号 |
+| 記録項目 | 取引年月日、取引金額及び取引先 | 取引年月日**その他の日付**、取引金額及び取引先 |
+| when it bites | only to claim 法第八条第四項 (優良帳簿, the 過少申告加算税 reduction) | always, less two exemptions |
+| sales ceiling | none | 五千万円以下 |
+
+Both require the same three things of the search itself: each 記録項目 usable
+as a condition, a range on date or amount, and two or more conditions combined.
+
+### `requires-book-search?` does not answer `true`
+
+It answers `:claiming-preferential-treatment`. Ordinary electronic book
+preservation under 法第四条第一項 carries **no** search requirement at all —
+search is what you do to claim a benefit. A caller that wanted a boolean and
+got a keyword has learned the real shape: whether the rule bites depends on a
+decision the holder makes and this library does not observe.
+
+`book-search` accordingly has four answers, and `:taxlaw/adequate?` is **nil**
+when the holder is not claiming the benefit — not `true`. *The rule does not
+reach you* and *you satisfy the rule* are different facts, and a caller that
+needs the second must not be handed the first wearing its clothes.
+
+### The two electronic-transaction exemptions, and what they make undecidable
+
+規則第四条第一項 carves them out in the same sentence that imports the
+requirement:
+
+- being able to respond to 電磁的記録の提示等の要求 drops ロ (range) and ハ
+  (combination), leaving イ;
+- that **and** either 基準期間における売上高が五千万円以下 or being able to
+  produce 取引年月日その他の日付及び取引先ごとに整理された書面 drops the whole
+  of 第五号.
+
+Both turn on facts about the holder. So `electronic-transaction-search` returns
+`:not-declared` when the on-demand capability is unstated — but **not** merely
+because a fact is missing. If the records can be produced on demand and イ is
+satisfied, the answer is settled and the sales figure never mattered; the wider
+exemption could only have helped and nothing needed helping. It refuses only
+where the missing fact is the one that decides, and even then it still reports
+`:taxlaw/missing` — *refusing to conclude is not refusing to inform.*
+
+Fifteen mutations cover this pair (`nbb tools/mutate.cljs`). Two survived the
+first run and both were real gaps: nothing had exercised the tier where the
+holder says it **cannot** produce on demand, so neither "all three are then
+required" nor "being small is not by itself an exemption" was measured.
+
 ## 所得税法 第百八十三条第一項 / 第百九十条 — read, then enforced
 
 The withholding facet exists because a payroll actor needed it. Same standing

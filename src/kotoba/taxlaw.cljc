@@ -211,7 +211,33 @@
                  "保存義務者は、電子取引を行った場合には、財務省令で定める"
                  "ところにより、当該電子取引の取引情報に係る電磁的記録を"
                  "保存しなければならない。")}
-    {:claim :employment-income-withholding-obligation
+    {:claim :book-search-function-for-preferential-treatment
+     :source :jp/dencho-kisoku
+     :provision "電子帳簿保存法施行規則 第五条第五項第一号ハ"
+     :retrieved-via "e-Gov law API v2 GET /api/2/law_data/410M50000040043"
+     :retrieved-at "2026-08-18"
+     :retrieved-revision "410M50000040043_20250401_507M60000040028"
+     :quote (str "ハ当該国税関係帳簿に係る電磁的記録の記録事項の検索をすることが"
+                 "できる機能（次に掲げる要件を満たすものに限る。）を確保しておく"
+                 "こと。（１）取引年月日、取引金額及び取引先（（２）及び（３）に"
+                 "おいて「記録項目」という。）を検索の条件として設定することが"
+                 "できること。（２）日付又は金額に係る記録項目については、その"
+                 "範囲を指定して条件を設定することができること。（３）二以上の"
+                 "任意の記録項目を組み合わせて条件を設定することができること。")}
+    {:claim :electronic-transaction-search-function
+     :source :jp/dencho-kisoku
+     :provision "電子帳簿保存法施行規則 第二条第六項第五号（第四条第一項が準用）"
+     :retrieved-via "e-Gov law API v2 GET /api/2/law_data/410M50000040043"
+     :retrieved-at "2026-08-18"
+     :retrieved-revision "410M50000040043_20250401_507M60000040028"
+     :quote (str "五当該国税関係書類に係る電磁的記録の記録事項の検索をすることが"
+                 "できる機能（次に掲げる要件を満たすものに限る。）を確保しておく"
+                 "こと。イ取引年月日その他の日付、取引金額及び取引先（ロ及びハに"
+                 "おいて「記録項目」という。）を検索の条件として設定することが"
+                 "できること。ロ日付又は金額に係る記録項目については、その範囲を"
+                 "指定して条件を設定することができること。ハ二以上の任意の記録"
+                 "項目を組み合わせて条件を設定することができること。")}
+   {:claim :employment-income-withholding-obligation
      :source :jp/shotokuzei-ho
      :provision "所得税法 第百八十三条第一項"
      :retrieved-via "e-Gov law API v2 GET /api/2/law_data/340AC0000000033"
@@ -332,6 +358,93 @@
                       "保存しなければならない。")
      :rule/retrieved-at "2026-08-17"
      :rule/applies-to #{:income-tax :corporation-tax}
+     :rule/sources [:jp/dencho-ho :jp/dencho-kisoku]}
+
+    ;; 検索要件 — read, not merely cited. 電子帳簿保存法施行規則, retrieved
+    ;; 2026-08-18 from `GET /api/2/law_data/410M50000040043` (revision
+    ;; 410M50000040043_20250401_507M60000040028).
+    ;;
+    ;; ## Two regimes, not one
+    ;;
+    ;; A 帳簿 and an electronic transaction record are governed by DIFFERENT
+    ;; provisions with DIFFERENT search requirements, and conflating them is
+    ;; the easy mistake here. Both are catalogued separately below.
+    ;;
+    ;;   帳簿      規則第五条第五項第一号ハ  — required only to claim the
+    ;;                                         過少申告加算税 reduction in
+    ;;                                         法第八条第四項 (優良帳簿).
+    ;;                                         Ordinary electronic book
+    ;;                                         preservation under 法第四条
+    ;;                                         第一項 does not require search
+    ;;                                         at all.
+    ;;   電子取引  規則第四条第一項 → 第二条  — required, with two exemptions
+    ;;             第六項第五号                that turn on facts about the
+    ;;                                         holder.
+    ;;
+    ;; The 記録項目 also differ by one phrase: 帳簿 reads 「取引年月日、
+    ;; 取引金額及び取引先」 and 書類/電子取引 reads 「取引年月日その他の日付、
+    ;; 取引金額及び取引先」. Recorded as read.
+    :jurisdiction/book-search
+    {:rule/required-only-when :claiming-preferential-treatment
+     :rule/review :read-from-source
+     :rule/provision "電子帳簿保存法施行規則 第五条第五項第一号ハ"
+     :rule/quote (str "ハ当該国税関係帳簿に係る電磁的記録の記録事項の検索を"
+                      "することができる機能（次に掲げる要件を満たすものに限る。）"
+                      "を確保しておくこと。（１）取引年月日、取引金額及び取引先"
+                      "（（２）及び（３）において「記録項目」という。）を検索の"
+                      "条件として設定することができること。（２）日付又は金額に"
+                      "係る記録項目については、その範囲を指定して条件を設定する"
+                      "ことができること。（３）二以上の任意の記録項目を組み合わせて"
+                      "条件を設定することができること。")
+     :rule/retrieved-at "2026-08-18"
+     :rule/retrieved-via "e-Gov law API v2 GET /api/2/law_data/410M50000040043"
+     :rule/retrieved-revision "410M50000040043_20250401_507M60000040028"
+     ;; The three 記録項目, as named by （１）.
+     :rule/record-items #{:transaction-date :amount :counterparty}
+     ;; （２）range, （３）combination of two or more.
+     :rule/range-items #{:transaction-date :amount}
+     :rule/combination-minimum 2
+     ;; What the requirement buys. Named so nobody reads it as a duty.
+     :rule/benefit "法第八条第四項（過少申告加算税の軽減）"
+     :rule/sources [:jp/dencho-ho :jp/dencho-kisoku]}
+
+    ;; 電子取引の検索要件. 規則第四条第一項 imports 第二条第六項第五号 and then
+    ;; carves two exemptions out of it in the same sentence. Both are read off
+    ;; the text and neither is widened:
+    ;;
+    ;;   (a) 電磁的記録の提示等の要求に応じることができるようにしている
+    ;;         → ロ (range) and ハ (combination) drop; イ still stands
+    ;;   (b) (a) AND (基準期間における売上高が五千万円以下
+    ;;              OR 整然とした形式・明瞭な状態で出力され取引年月日その他の
+    ;;                 日付及び取引先ごとに整理された書面の提示等に応じられる)
+    ;;         → the whole 第五号 drops
+    ;;
+    ;; Both turn on facts about the holder that no library can observe, which
+    ;; is why `electronic-transaction-search` refuses to answer rather than
+    ;; defaulting either way.
+    :jurisdiction/electronic-transaction-search
+    {:rule/must-provide-search? true
+     :rule/review :read-from-source
+     :rule/provision "電子帳簿保存法施行規則 第二条第六項第五号（第四条第一項が準用）"
+     :rule/quote (str "五当該国税関係書類に係る電磁的記録の記録事項の検索を"
+                      "することができる機能（次に掲げる要件を満たすものに限る。）"
+                      "を確保しておくこと。イ取引年月日その他の日付、取引金額及び"
+                      "取引先（ロ及びハにおいて「記録項目」という。）を検索の条件"
+                      "として設定することができること。ロ日付又は金額に係る記録"
+                      "項目については、その範囲を指定して条件を設定することが"
+                      "できること。ハ二以上の任意の記録項目を組み合わせて条件を"
+                      "設定することができること。")
+     :rule/retrieved-at "2026-08-18"
+     :rule/retrieved-via "e-Gov law API v2 GET /api/2/law_data/410M50000040043"
+     :rule/retrieved-revision "410M50000040043_20250401_507M60000040028"
+     :rule/record-items #{:transaction-date :amount :counterparty}
+     :rule/range-items #{:transaction-date :amount}
+     :rule/combination-minimum 2
+     ;; 「五千万円以下」 — from 規則第四条第一項, not from guidance.
+     :rule/small-holder-sales-ceiling-yen 50000000
+     :rule/exemptions
+     {:on-demand-production "ロ・ハが外れる（イは残る）"
+      :small-holder-or-organized-paper "第五号全体が外れる（提示等に応じられる場合に限る）"}
      :rule/sources [:jp/dencho-ho :jp/dencho-kisoku]}
 
     ;; 源泉徴収義務 — read, not merely cited. 所得税法 第百八十三条第一項,
@@ -673,6 +786,204 @@
   because neither established that the record is preserved."
   [j document]
   (true? (:taxlaw/preserved? (record-preservation j document))))
+
+;; ---------------------------------------------------------------------------
+;; 検索要件 — 規則第五条第五項第一号ハ (帳簿) and 規則第二条第六項第五号 (電子取引)
+;; ---------------------------------------------------------------------------
+
+(defn- search-shortfall
+  "Which of the three sub-requirements a system does not meet, given the
+  rule and what the system says it can do. A set, so an empty one means
+  `nothing was found missing` — and the caller still has to have established
+  that anything was looked at."
+  [rule {:keys [searchable-by range-search? combination-search?]} required]
+  (let [items (set (or searchable-by #{}))]
+    (cond-> #{}
+      (and (contains? required :items)
+           (not (every? items (:rule/record-items rule))))
+      (conj :record-items)
+
+      (and (contains? required :range) (not (true? range-search?)))
+      (conj :range)
+
+      (and (contains? required :combination) (not (true? combination-search?)))
+      (conj :combination))))
+
+(defn requires-book-search?
+  "Must a 国税関係帳簿 be searchable here?
+
+  **This is deliberately not a plain yes.** 規則第五条第五項第一号ハ attaches
+  to 法第八条第四項 — the 過少申告加算税 reduction — and ordinary electronic
+  book preservation under 法第四条第一項 does not require search at all. So
+  the honest answer is a keyword, not a boolean:
+
+    nil                              uncatalogued jurisdiction
+    :claiming-preferential-treatment required IF the holder is claiming it
+
+  A caller that wanted `true` and got a keyword has learned something real:
+  whether the requirement bites depends on a decision the holder makes and
+  the software does not observe."
+  [j]
+  (get-in jurisdictions
+          [(normalize j) :jurisdiction/book-search :rule/required-only-when]))
+
+(defn book-search
+  "Does this bookkeeping system meet 規則第五条第五項第一号ハ?
+
+  `books` states what the system can do and what the holder is claiming:
+
+      {:claiming-preferential-treatment? true|false   法第八条第四項
+       :searchable-by #{:transaction-date :amount :counterparty}
+       :range-search? true|false
+       :combination-search? true|false}
+
+  Four-valued, like `record-preservation` and for the same reason:
+
+    {:taxlaw/coverage :none}          nobody catalogued this jurisdiction
+    {:taxlaw/coverage :not-declared}  the books do not say whether the
+                                      holder is claiming 法第八条第四項.
+                                      **Not a pass.** The requirement may
+                                      or may not bite and nothing here can
+                                      tell which.
+    {:taxlaw/coverage :checked
+     :taxlaw/search-required? false}  explicitly not claiming it — the
+                                      requirement genuinely does not apply
+    {:taxlaw/coverage :checked
+     :taxlaw/search-required? true
+     :taxlaw/adequate? bool
+     :taxlaw/missing #{...}}          it does apply, and here is the answer
+
+  `:taxlaw/adequate?` is **nil** when the requirement does not apply, not
+  true. `the rule does not reach you` and `you satisfy the rule` are
+  different facts and a caller that needs the second must not be handed the
+  first wearing its clothes."
+  [j books]
+  (let [path (normalize j)
+        rule (get-in jurisdictions [path :jurisdiction/book-search])]
+    (cond
+      (or (not (covered? path)) (nil? rule))
+      {:taxlaw/coverage :none :taxlaw/unchecked [path]}
+
+      (nil? (:claiming-preferential-treatment? books))
+      {:taxlaw/coverage :not-declared
+       :taxlaw/why (str "the books do not say whether the holder is claiming "
+                        (:rule/benefit rule)
+                        "; the search requirement attaches to that claim and "
+                        "to nothing else")
+       :taxlaw/provision (:rule/provision rule)}
+
+      (not (true? (:claiming-preferential-treatment? books)))
+      {:taxlaw/coverage :checked
+       :taxlaw/jurisdiction path
+       :taxlaw/search-required? false
+       :taxlaw/adequate? nil
+       :taxlaw/why (str "ordinary electronic preservation under 法第四条第一項 "
+                        "carries no search requirement")}
+
+      :else
+      (let [missing (search-shortfall rule books #{:items :range :combination})]
+        {:taxlaw/coverage :checked
+         :taxlaw/jurisdiction path
+         :taxlaw/search-required? true
+         :taxlaw/adequate? (empty? missing)
+         :taxlaw/missing missing
+         :taxlaw/record-items (:rule/record-items rule)
+         :taxlaw/provision (:rule/provision rule)}))))
+
+(defn book-search-adequate?
+  "Convenience boolean over `book-search`, conservative like `preserved?`.
+
+  False for `:none`, for `:not-declared`, **and for a holder that is not
+  claiming 法第八条第四項** — in that last case nothing is wrong, but
+  nothing was satisfied either, and this function answers the second
+  question."
+  [j books]
+  (true? (:taxlaw/adequate? (book-search j books))))
+
+(defn electronic-transaction-search
+  "Does this setup meet the search requirement 規則第四条第一項 imports for
+  electronic transaction records?
+
+  `setup` states what the system can do and the two facts the exemptions
+  turn on:
+
+      {:searchable-by #{...} :range-search? bool :combination-search? bool
+       :can-produce-on-demand? bool     電磁的記録の提示等の要求に応じられる
+       :base-period-sales-yen n         基準期間における売上高
+       :paper-output-organized? bool    取引年月日その他の日付及び取引先ごとに
+                                        整理された書面の提示等に応じられる}
+
+  ## What the exemptions do, read off 規則第四条第一項
+
+  Producing the records on demand drops ロ (range) and ハ (combination) and
+  leaves イ. Doing that **and** either being under the 五千万円 sales ceiling
+  or being able to produce organized paper drops the whole of 第五号.
+
+  ## Why this can answer `:not-declared` even when it knows a lot
+
+  If the holder has not said whether it can produce on demand, the tier is
+  unknown and the answer is `:not-declared`. If it can produce on demand and
+  イ is satisfied, the answer is settled and the sales figure never matters —
+  the wider exemption could only help, and nothing needed helping. But if
+  イ is **not** satisfied, the wider exemption is the only thing left, and
+  it turns on a sales figure or a paper capability that may not be stated:
+  then this returns `:not-declared` rather than a refusal, because
+  `you fail` and `you did not tell me the fact that decides it` are not the
+  same finding."
+  [j setup]
+  (let [path (normalize j)
+        rule (get-in jurisdictions [path :jurisdiction/electronic-transaction-search])]
+    (cond
+      (or (not (covered? path)) (nil? rule))
+      {:taxlaw/coverage :none :taxlaw/unchecked [path]}
+
+      (nil? (:can-produce-on-demand? setup))
+      {:taxlaw/coverage :not-declared
+       :taxlaw/why (str "the setup does not say whether it can respond to "
+                        "電磁的記録の提示等の要求; both exemptions in "
+                        "規則第四条第一項 depend on it")
+       :taxlaw/provision (:rule/provision rule)}
+
+      :else
+      (let [on-demand? (true? (:can-produce-on-demand? setup))
+            sales (:base-period-sales-yen setup)
+            ceiling (:rule/small-holder-sales-ceiling-yen rule)
+            small (cond (number? sales) (<= sales ceiling) :else nil)
+            paper (:paper-output-organized? setup)
+            ;; The wider exemption needs on-demand AND (small OR paper).
+            wider (cond (not on-demand?) false
+                        (or (true? small) (true? paper)) true
+                        ;; both legs known and neither holds
+                        (and (false? small) (false? paper)) false
+                        :else nil)
+            required (cond wider #{}
+                           on-demand? #{:items}
+                           :else #{:items :range :combination})
+            missing (search-shortfall rule setup required)]
+        (if (and (seq missing) (nil? wider))
+          {:taxlaw/coverage :not-declared
+           :taxlaw/why (str "the setup does not meet " (pr-str missing)
+                            " and does not state the 基準期間の売上高 or the "
+                            "organized-paper capability that the wider "
+                            "exemption in 規則第四条第一項 turns on")
+           :taxlaw/missing missing
+           :taxlaw/provision (:rule/provision rule)}
+          {:taxlaw/coverage :checked
+           :taxlaw/jurisdiction path
+           :taxlaw/search-required? (boolean (seq required))
+           :taxlaw/exemption (cond wider :small-holder-or-organized-paper
+                                   on-demand? :on-demand-production
+                                   :else nil)
+           :taxlaw/adequate? (empty? missing)
+           :taxlaw/missing missing
+           :taxlaw/record-items (:rule/record-items rule)
+           :taxlaw/provision (:rule/provision rule)})))))
+
+(defn electronic-transaction-search-adequate?
+  "Convenience boolean over `electronic-transaction-search`, conservative in
+  the same way — `:none` and `:not-declared` are both false."
+  [j setup]
+  (true? (:taxlaw/adequate? (electronic-transaction-search j setup))))
 
 ;; ---------------------------------------------------------------------------
 ;; 源泉徴収 / 年末調整 — 所得税法 第百八十三条第一項 and 第百九十条
