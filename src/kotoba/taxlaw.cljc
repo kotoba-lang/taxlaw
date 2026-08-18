@@ -1237,7 +1237,7 @@
         known (:rule/tax-categories rule)]
     (cond
       (or (not (covered? path)) (nil? rule))
-      {:taxlaw/coverage :none :taxlaw/unchecked [path]}
+      (uncovered path :jurisdiction/qualified-invoice-tax-amount)
 
       (nil? (get methods method))
       {:taxlaw/coverage :not-declared
@@ -1375,7 +1375,7 @@
         rule (get-in jurisdictions [path :jurisdiction/book-search])]
     (cond
       (or (not (covered? path)) (nil? rule))
-      {:taxlaw/coverage :none :taxlaw/unchecked [path]}
+      (uncovered path :jurisdiction/book-search)
 
       (nil? (:claiming-preferential-treatment? books))
       {:taxlaw/coverage :not-declared
@@ -1448,7 +1448,7 @@
         rule (get-in jurisdictions [path :jurisdiction/electronic-transaction-search])]
     (cond
       (or (not (covered? path)) (nil? rule))
-      {:taxlaw/coverage :none :taxlaw/unchecked [path]}
+      (uncovered path :jurisdiction/electronic-transaction-search)
 
       (nil? (:can-produce-on-demand? setup))
       {:taxlaw/coverage :not-declared

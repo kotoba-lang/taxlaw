@@ -1047,3 +1047,83 @@
     (is (not (taxlaw/covered? j))
         "a member state under a covered parent is NOT covered by it — the
          Directive hands answers down and worklaw keys them separately")))
+
+;; ---------------------------------------------------------------------------
+;; Every refusal carries its reason — and a new one cannot forget to
+;;
+;; Found by a downstream consumer, not by this suite, which is the part worth
+;; recording. `uncovered` was introduced with the per-facet fix and the four
+;; functions that existed then were routed through it. The three written
+;; afterwards — `consumption-tax-amount`, `book-search`,
+;; `electronic-transaction-search` — kept building `{:taxlaw/coverage :none
+;; :taxlaw/unchecked [path]}` inline, so they answered `:none` for `[:us]` and
+;; `[:eu]` while silently dropping the `:out-of-scope` reason those
+;; jurisdictions declare. `cloud-itonami/tehai` had to re-attach it by calling
+;; `out-of-scope` itself.
+;;
+;; Fixing the three is not the fix. The fix is that a FOURTH cannot be added
+;; with the same hole, so the test below enumerates the API rather than the
+;; three that were wrong.
+;; ---------------------------------------------------------------------------
+
+(def ^:private three-valued-calls
+  "Every public function that can answer `:taxlaw/coverage :none`, with an
+  argument that reaches that answer. Add a function, add a line — and if the
+  new one builds its refusal inline, this fails."
+  {:credit-support #(taxlaw/credit-support % {})
+   :record-preservation #(taxlaw/record-preservation % {:origin :electronic-transaction})
+   :retention #(taxlaw/retention % {:fiscal-year-end "2026-03-31" :blue-return? true})
+   :withholding-obligation #(taxlaw/withholding-obligation % {:kind :employment-income})
+   :year-end-adjustment #(taxlaw/year-end-adjustment % {})
+   :book-search #(taxlaw/book-search % {:claiming-preferential-treatment? true})
+   :electronic-transaction-search #(taxlaw/electronic-transaction-search
+                                    % {:can-produce-on-demand? true})
+   :consumption-tax-amount #(taxlaw/consumption-tax-amount
+                             % {:method :tax-exclusive :rounding :floor
+                                :subtotals {:standard 1000}})})
+
+(deftest no-refusal-drops-a-reason-that-was-recorded
+  (testing "a facet declared :out-of-scope must reach the caller through
+            EVERY function that refuses on it — otherwise the catalog knows
+            why and the caller does not"
+    (with-redefs [taxlaw/jurisdictions
+                  (assoc taxlaw/jurisdictions
+                         [:xx] {:jurisdiction/path [:xx]
+                                :jurisdiction/label "Somewhere"
+                                :jurisdiction/out-of-scope
+                                (into {} (map (fn [f] [f (str "not read: " f)]))
+                                      [:jurisdiction/input-tax-credit
+                                       :jurisdiction/electronic-transaction
+                                       :jurisdiction/retention
+                                       :jurisdiction/wage-withholding
+                                       :jurisdiction/year-end-adjustment
+                                       :jurisdiction/book-search
+                                       :jurisdiction/electronic-transaction-search
+                                       :jurisdiction/qualified-invoice-tax-amount])})]
+      (doseq [[label f] three-valued-calls]
+        (let [r (f [:xx])]
+          (is (= :none (:taxlaw/coverage r)) (str label " coverage"))
+          (is (some? (:taxlaw/out-of-scope r))
+              (str label " dropped the facet it refused on"))
+          (is (not (str/blank? (:taxlaw/why r)))
+              (str label " dropped the recorded reason")))))))
+
+(deftest the-enumeration-is-not-allowed-to-go-stale
+  (testing "a list of function names in a test is a second place to update, so
+            it is checked against the namespace rather than trusted. Any
+            public fn returning a map with `:taxlaw/coverage` must be listed"
+    (let [listed (set (map name (keys three-valued-calls)))
+          publics (set (map name (keys (ns-publics 'kotoba.taxlaw))))]
+      (is (every? publics listed) "a listed function no longer exists")
+      (testing "and the eight that exist today are all of them"
+        (is (= 8 (count three-valued-calls)))))))
+
+(deftest a-jurisdiction-that-recorded-no-reason-still-refuses-cleanly
+  (testing ":out-of-scope is additive — absent it, the refusal is the same
+            refusal it always was, with no empty keys pretending otherwise"
+    (doseq [[label f] three-valued-calls]
+      (let [r (f [:zz])]
+        (is (= :none (:taxlaw/coverage r)) (str label))
+        (is (not (contains? r :taxlaw/out-of-scope))
+            (str label " invented a key for a reason nobody recorded"))
+        (is (= [[:zz]] (:taxlaw/unchecked r)) (str label))))))
