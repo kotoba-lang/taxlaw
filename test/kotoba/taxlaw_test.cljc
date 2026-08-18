@@ -1,5 +1,6 @@
 (ns kotoba.taxlaw-test
   (:require [clojure.test :refer [deftest is testing]]
+            [clojure.set]
             [clojure.string :as str]
             [kotoba.taxlaw :as taxlaw]))
 
@@ -1127,3 +1128,138 @@
         (is (not (contains? r :taxlaw/out-of-scope))
             (str label " invented a key for a reason nobody recorded"))
         (is (= [[:zz]] (:taxlaw/unchecked r)) (str label))))))
+
+;; ---------------------------------------------------------------------------
+;; How much of the world is this?
+;;
+;; With three jurisdictions read and three known, the honest arithmetic is
+;; 3/3 and `100%` is what a reader takes away. So the denominator has to come
+;; from outside: what is being measured is precisely what this catalog does
+;; not know about, and a catalog counting itself is the same shape as a
+;; checker whose corpus is missing reporting zero problems.
+;; ---------------------------------------------------------------------------
+
+(deftest a-catalog-cannot-state-its-own-coverage
+  (testing "no universe, no answer — and specifically not `3 of 3`"
+    (let [r (taxlaw/world-coverage #{})]
+      (is (= :not-declared (:taxlaw/coverage r)))
+      (is (nil? (:taxlaw/universe-size r)))
+      (is (str/includes? (:taxlaw/why r) "3/3"))))
+  (testing "nil is not a universe either"
+    (is (= :not-declared (:taxlaw/coverage (taxlaw/world-coverage nil))))))
+
+(deftest the-depth-buckets-partition-the-facet-universe
+  (testing "the first version reported `read` and `out-of-scope` as separate
+            counts and [:eu] came back 3 + 6 = 9 out of 8, because a facet
+            can be both — read, with a sub-question inside it out of scope.
+            Two buckets could not say that, so they double-counted"
+    (doseq [j (keys taxlaw/jurisdictions)]
+      (let [d (taxlaw/depth j)]
+        (is (= (:taxlaw/of d)
+               (+ (:taxlaw/read d) (:taxlaw/partly-read d)
+                  (:taxlaw/out-of-scope d) (:taxlaw/silent d)))
+            (str j " buckets do not sum to " (:taxlaw/of d) ": " (pr-str d)))))))
+
+(deftest the-partly-read-facet-is-named-and-it-is-the-eu-one
+  (testing "電子帳簿保存法 第七条 obliges the holder to preserve; Directive
+            Article 218 obliges the Member State to accept. The EU facet was
+            read, and the holder question inside it is separately recorded as
+            not read — that is what `:partly-read` exists to say"
+    (let [d (taxlaw/depth [:eu])]
+      (is (= 1 (:taxlaw/partly-read d)))
+      (is (= [:jurisdiction/electronic-transaction] (:taxlaw/partly-read-facets d))))
+    (is (zero? (:taxlaw/partly-read (taxlaw/depth [:jp]))))
+    (is (zero? (:taxlaw/partly-read (taxlaw/depth [:us]))))))
+
+(deftest silence-is-distinguishable-from-a-decision-not-to-read
+  (testing "a silent facet and an out-of-scope one look identical from every
+            other view — `credit-support` answers `:none` for both, correctly.
+            This is the view that tells them apart, and the difference is
+            whether there is a decision behind the absence"
+    (with-redefs [taxlaw/jurisdictions
+                  (assoc taxlaw/jurisdictions
+                         [:xx] {:jurisdiction/path [:xx]
+                                :jurisdiction/label "Somewhere"
+                                :jurisdiction/retention {:rule/years 5}
+                                :jurisdiction/out-of-scope
+                                {:jurisdiction/wage-withholding "not read"}})]
+      (let [d (taxlaw/depth [:xx])]
+        (is (= 1 (:taxlaw/read d)))
+        (is (= 1 (:taxlaw/out-of-scope d)))
+        (is (= 6 (:taxlaw/silent d)))
+        (is (= 6 (count (:taxlaw/silent-facets d))))
+        (is (not (some #{:jurisdiction/retention :jurisdiction/wage-withholding}
+                       (:taxlaw/silent-facets d)))
+            "neither the read one nor the declared one is silent"))))
+  (testing "and the three real jurisdictions have no silent facet — every one
+            is either read or recorded as deliberately not read"
+    (doseq [j (keys taxlaw/jurisdictions)]
+      (is (zero? (:taxlaw/silent (taxlaw/depth j))) (str j)))))
+
+(deftest coverage-has-two-dimensions-and-reporting-one-is-the-lie
+  (let [r (taxlaw/world-coverage #{[:jp] [:us] [:eu] [:de] [:fr] [:sg] [:gb]})]
+    (is (= :checked (:taxlaw/coverage r)))
+    (is (= 7 (:taxlaw/universe-size r)))
+    (testing "three of seven jurisdictions have something read"
+      (is (= [[:eu] [:jp] [:us]] (:taxlaw/read r)))
+      (is (= 4 (:taxlaw/unread-count r)))
+      (is (= [[:de] [:fr] [:gb] [:sg]] (:taxlaw/unread r))))
+    (testing "but [:us] is one facet of eight, and counting it as a covered
+              jurisdiction is true and misleading — so the depth rides along"
+      (is (= {:taxlaw/read 1 :taxlaw/partly-read 0 :taxlaw/of 8}
+             (get-in r [:taxlaw/depth [:us]]))))
+    (testing "and the figure that does not flatter: facets read across the
+              universe, over facets the universe could have had"
+      (is (= {:read 12 :of 56} (:taxlaw/facet-total r)))
+      (is (< (/ 12 56) (/ 3 7))
+          "the facet figure is LOWER than the jurisdiction figure, which is
+           the point of reporting it"))))
+
+(deftest a-universe-smaller-than-the-catalog-is-a-real-answer
+  (testing "a firm trading in two countries has a universe of two, and 2/2 is
+            true and useful where 193 would bury it. What is read but outside
+            the universe is reported rather than dropped"
+    (let [r (taxlaw/world-coverage #{[:jp] [:us]})]
+      (is (= 2 (:taxlaw/universe-size r)))
+      (is (zero? (:taxlaw/unread-count r)))
+      (is (= [[:eu]] (:taxlaw/outside-universe r))))))
+
+(deftest the-facet-universe-is-the-one-the-functions-use
+  (testing "a facet added to a jurisdiction without a line in
+            `facet-universe` would be uncounted by every figure above, and
+            silently — the same reason the refusal test enumerates against
+            `ns-publics`"
+    (let [used (into #{} (mapcat (fn [[_ m]]
+                                   (remove #{:jurisdiction/path :jurisdiction/label
+                                             :jurisdiction/out-of-scope}
+                                           (keys m))))
+                     taxlaw/jurisdictions)]
+      (is (= used (clojure.set/intersection used taxlaw/facet-universe))
+          (str "facets in use but not in facet-universe: "
+               (pr-str (clojure.set/difference used taxlaw/facet-universe)))))
+    (is (= 8 (count taxlaw/facet-universe)))))
+
+(deftest a-jurisdiction-whose-only-facet-is-partly-read-is-not-unread
+  (testing "no real jurisdiction is shaped this way — [:eu] has two fully
+            read facets alongside its partly-read one — so dropping
+            `partly-read` from the `touched?` predicate changed nothing and
+            a mutation survived on it. The case is real even if today's data
+            does not contain it: an article read with a sub-question left out
+            is still an article read, and reporting that jurisdiction as
+            wholly unread would understate what the catalog holds"
+    (with-redefs [taxlaw/jurisdictions
+                  (assoc taxlaw/jurisdictions
+                         [:xx] {:jurisdiction/path [:xx]
+                                :jurisdiction/label "Somewhere"
+                                :jurisdiction/retention {:rule/years 5}
+                                :jurisdiction/out-of-scope
+                                {:jurisdiction/retention "the period itself is not read"}})]
+      (let [d (taxlaw/depth [:xx])]
+        (is (zero? (:taxlaw/read d)) "its one facet is not fully read")
+        (is (= 1 (:taxlaw/partly-read d))))
+      (let [r (taxlaw/world-coverage #{[:xx]})]
+        (is (= [[:xx]] (:taxlaw/read r)))
+        (is (zero? (:taxlaw/unread-count r))
+            "read-with-a-gap is not the same as never looked at")
+        (is (= {:read 1 :of 8} (:taxlaw/facet-total r))
+            "and it counts as one facet read, not zero and not two")))))

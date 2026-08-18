@@ -288,4 +288,54 @@
   :invariant "absent a reason, the refusal is the refusal it always was"
   :file "src/kotoba/taxlaw.cljc"
   :find "    (cond-> {:taxlaw/coverage :none :taxlaw/unchecked [path]}\n      why (assoc :taxlaw/out-of-scope f"
-  :replace "    (cond-> {:taxlaw/coverage :none :taxlaw/unchecked [path]}\n      true (assoc :taxlaw/out-of-scope f"}]
+  :replace "    (cond-> {:taxlaw/coverage :none :taxlaw/unchecked [path]}\n      true (assoc :taxlaw/out-of-scope f"}
+
+ ;; --- how much of the world is this (2026-08-18) ---
+
+ {:id :a-catalog-cannot-count-itself
+  :invariant "no universe, no answer — and specifically not 3 of 3"
+  :file "src/kotoba/taxlaw.cljc"
+  :find "    (if (empty? u)"
+  :replace "    (if (empty? (or (seq u) (keys jurisdictions)))"}
+
+ {:id :the-depth-buckets-are-disjoint
+  :invariant "a facet both read and partly out of scope is counted once"
+  :file "src/kotoba/taxlaw.cljc"
+  :find "        read-only (clojure.set/difference present oos)"
+  :replace "        read-only present"}
+
+ {:id :silence-is-not-a-decision
+  :invariant "a facet nobody thought about is not one deliberately left out"
+  :file "src/kotoba/taxlaw.cljc"
+  :find "        silent (clojure.set/difference facet-universe present oos)]"
+  :replace "        silent #{}]"}
+
+ {:id :the-silent-facets-are-named
+  :invariant "named, not counted — the house rule everywhere else here"
+  :file "src/kotoba/taxlaw.cljc"
+  :find "     :taxlaw/silent-facets (vec (sort silent))}))"
+  :replace "     :taxlaw/silent-facets []}))"}
+
+ {:id :a-partly-read-jurisdiction-counts-as-touched
+  :invariant "a jurisdiction whose only facet is partly-read is not unread"
+  :file "src/kotoba/taxlaw.cljc"
+  :find "                               (pos? (+ (:taxlaw/read d) (:taxlaw/partly-read d)))))"
+  :replace "                               (pos? (:taxlaw/read d))))"}
+
+ {:id :the-facet-figure-does-not-flatter
+  :invariant "facets read over facets the universe could have had"
+  :file "src/kotoba/taxlaw.cljc"
+  :find "                              :of (* (count u) (count facet-universe))}"
+  :replace "                              :of (* (count (keys jurisdictions)) (count facet-universe))}"}
+
+ {:id :what-is-read-outside-the-universe-is-reported
+  :invariant "a universe smaller than the catalog does not silently drop the rest"
+  :file "src/kotoba/taxlaw.cljc"
+  :find "         (vec (sort-by str (clojure.set/difference (set (keys jurisdictions)) u)))}))))"
+  :replace "         []}))))"}
+
+ {:id :the-facet-universe-covers-what-is-in-use
+  :invariant "a facet added without a line here is uncounted, and silently"
+  :file "src/kotoba/taxlaw.cljc"
+  :find "    :jurisdiction/year-end-adjustment})"
+  :replace "    })"}]
