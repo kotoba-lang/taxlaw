@@ -709,7 +709,116 @@
      :rule/declaration "給与所得者の扶養控除等申告書"
      ;; 「二千万円以下」 — from the text, not from guidance.
      :rule/income-ceiling-yen 20000000
-     :rule/sources [:jp/shotokuzei-ho]}}
+     :rule/sources [:jp/shotokuzei-ho]}
+
+    ;; 申告書 — WHO must file WHAT by WHEN, and nothing about the numbers.
+    ;;
+    ;; The numbers are deliberately absent, for the reason
+    ;; `bookkeeping.shinkoku` gives about 消費税: a return's figures come from
+    ;; tax-law adjustments that are not ledger balances, and a clean wrong
+    ;; number is worse than none. What a catalogue CAN hold is the
+    ;; obligation, and the obligation is in the text.
+    :jurisdiction/return-filing
+    {:rule/review :read-from-source
+     :rule/regimes
+     {:corporate
+      {:rule/who "内国法人"
+       :rule/provision "法人税法 第七十四条第一項"
+       :rule/quote (str "内国法人は、各事業年度終了の日の翌日から二月以内に、"
+                        "税務署長に対し、確定した決算に基づき次に掲げる事項を"
+                        "記載した申告書を提出しなければならない。")
+       :rule/quote-is-partial? true
+       ;; 第一項: two months after the day AFTER the fiscal year ends. The
+       ;; deadline is relative, so it is held as an offset, never a date.
+       :rule/due {:from :fiscal-year-end+1d :months 2}
+       ;; 第二項 — a liquidating company whose 残余財産 is settled files in
+       ;; ONE month, or by the day before the final distribution if that is
+       ;; sooner. Held because a catalogue that only knew 第一項 would give
+       ;; a confidently wrong deadline to the one filer whose deadline moved.
+       :rule/due-exception
+       {:when :liquidation-residual-assets-determined
+        :provision "法人税法 第七十四条第二項"
+        :months 1
+        :or-earlier "残余財産の最後の分配又は引渡しが行われる日の前日"}
+       ;; 第三項. This is the seam to kotoba-lang/shohyo, which folds a trial
+       ;; balance into exactly these two statements.
+       :rule/attachments-required ["貸借対照表" "損益計算書"]
+       :rule/attachments-provision "法人税法 第七十四条第三項"
+       :rule/unconditional? true
+       :rule/sources [:jp/hojinzei-ho]}
+
+      :individual
+      {:rule/who "居住者"
+       :rule/provision "所得税法 第百二十条第一項"
+       :rule/quote (str "第三期（その年の翌年二月十六日から三月十五日までの期間を"
+                        "いう。以下この節において同じ。）において、税務署長に対し、"
+                        "次に掲げる事項を記載した申告書を提出しなければならない。")
+       :rule/quote-is-partial? true
+       :rule/due {:window "翌年二月十六日から三月十五日" :term "第三期"}
+       ;; **Not everyone files.** 第一項 is conditional on the total exceeding
+       ;; the deductions AND the computed tax exceeding 配当控除, with three
+       ;; carve-outs inside the parenthesis and 第百二十三条第一項 as a
+       ;; separate route. A boolean here would say "yes, file" to a resident
+       ;; the statute exempts, so the catalogue holds the condition unread
+       ;; rather than a verdict.
+       :rule/unconditional? false
+       :rule/condition-provision "所得税法 第百二十条第一項"
+       :rule/condition-not-modelled
+       (str "義務は 総所得金額等 > 所得控除の合計 かつ 算出税額 > 配当控除 の"
+            "ときに生じ、外国税額控除・源泉徴収税額・予納税額の控除しきれない"
+            "場合は除かれる。第百二十三条第一項（確定損失申告）は別経路。"
+            "この判定は帳簿ではなく個人の年間所得全体に依存するため、ここでは"
+            "条件を保持するだけで判定しない。")
+       :rule/sources [:jp/shotokuzei-ho]}}
+     :rule/retrieved-at "2026-08-19"
+     :rule/retrieved-via (str "e-Gov law API v2 GET /api/2/law_data/340AC0000000034"
+                              " and /api/2/law_data/340AC0000000033")
+     :rule/retrieved-revision ["340AC0000000034_20260812_508AC0000000064"
+                               "340AC0000000033_20260812_508AC0000000064"]
+     ;; Both laws carry FOUR and TWO nodes numbered 74 / 120 respectively:
+     ;; the 附則 repeat article numbers. Reading "Article 74" without
+     ;; checking which one returns 罰則に関する経過措置, not 確定申告.
+     :rule/reading-hazard
+     "同番号の条が附則にも在る（第七十四条は本則1+附則3、第百二十条は本則1+附則1）"
+     :rule/sources [:jp/hojinzei-ho :jp/shotokuzei-ho]}
+
+    ;; 真実性の確保 — the other half of electronic-transaction preservation.
+    ;; `:jurisdiction/electronic-transaction-search` holds 可視性 (the search
+    ;; requirement); this holds the integrity measure, and the two are
+    ;; cumulative: 規則第四条第一項 requires ONE of these measures AND the
+    ;; search conditions.
+    :jurisdiction/preservation-integrity
+    {:rule/review :read-from-source
+     :rule/provision "電子帳簿保存法施行規則 第四条第一項"
+     :rule/quote (str "法第七条に規定する保存義務者は、電子取引を行った場合には、"
+                      "当該電子取引の取引情報に係る電磁的記録を、…次に掲げる措置の"
+                      "いずれかを行い、…掲げる要件に従って保存しなければならない。")
+     :rule/quote-is-partial? true
+     ;; Four alternatives, and ANY ONE satisfies it. A store that implements
+     ;; only :tamper-evident-system is conformant; so is a business with no
+     ;; special system at all and a written 事務処理規程.
+     :rule/measures
+     [{:measure :timestamp-before-exchange
+       :provision "第一号"
+       :text "当該電磁的記録の記録事項にタイムスタンプが付された後、当該取引情報の授受を行うこと。"}
+      {:measure :timestamp-after-exchange
+       :provision "第二号"
+       :text "授受後、速やかに（イ）／通常の業務処理期間経過後、速やかに（ロ、規程を定めている場合に限る）タイムスタンプを付すこと。"}
+      {:measure :tamper-evident-system
+       :provision "第三号"
+       :text "訂正・削除の事実及び内容を確認できる（イ）、または訂正・削除ができない（ロ）電子計算機処理システムを使用すること。"}
+      {:measure :written-procedure
+       :provision "第四号"
+       :text "正当な理由がない訂正及び削除の防止に関する事務処理規程を定め、これに沿った運用を行うこと。"}]
+     :rule/any-one-suffices? true
+     ;; RFC 3161 is what a timestamp is, and this workspace already mirrors
+     ;; it. Named so measures 1 and 2 point at an implementation rather than
+     ;; at a word.
+     :rule/timestamp-protocol "kotoba-lang/org-ietf-rfc3161"
+     :rule/retrieved-at "2026-08-19"
+     :rule/retrieved-via "e-Gov law API v2 GET /api/2/law_data/410M50000040043"
+     :rule/retrieved-revision "410M50000040043_20250401_507M60000040028"
+     :rule/sources [:jp/dencho-ho :jp/dencho-kisoku]}}
 
    ;; -------------------------------------------------------------------
    ;; [:eu] — Council Directive 2006/112/EC
@@ -821,6 +930,16 @@
           "handed to the Member State by Article 247(2) and is not read")
      :jurisdiction/wage-withholding
      "the Directive is a VAT instrument; payroll withholding is Member State law and is not read"
+     :jurisdiction/return-filing
+     (str "Articles 250-252 require a VAT return, which is a different "
+          "instrument from the corporate and individual income-tax returns "
+          "this facet holds; those are Member State law. Neither the VAT "
+          "return nor any national return is read here")
+     :jurisdiction/preservation-integrity
+     (str "Article 233 requires authenticity of origin and integrity of "
+          "content to be guaranteed and leaves the method to the taxable "
+          "person; it enumerates no measures the way 規則第四条第一項 does, "
+          "and it is not read")
      :jurisdiction/year-end-adjustment
      "Member State law, not read"
      :jurisdiction/qualified-invoice-tax-amount
@@ -881,6 +1000,12 @@
      "no federal consumption tax to compute"
      :jurisdiction/electronic-transaction
      "26 CFR 1.6001-1 does not distinguish electronic from paper records; Rev. Proc. 97-22 was not read"
+     :jurisdiction/return-filing
+     (str "IRC 6012 (who must file) and 6072 (when) exist and are the "
+          "analogue, but neither was read; this catalog holds no US filing "
+          "obligation and must not be taken to say there is none")
+     :jurisdiction/preservation-integrity
+     "Rev. Proc. 97-22 is the analogue for electronic storage integrity and was not read"
      :jurisdiction/wage-withholding
      "IRC §3402 and 26 CFR 31.3402 were not read"
      :jurisdiction/year-end-adjustment
@@ -1363,6 +1488,64 @@
 ;; How much of the world is this?
 ;; ---------------------------------------------------------------------------
 
+(defn filing-obligation
+  "The filing obligation `j` places on `regime`, or nil.
+
+  `regime` is `:corporate` or `:individual`. nil means **this catalogue has
+  not read that regime here**, which is not the same as no obligation — the
+  distinction every other accessor in this file makes, for the same reason.
+
+  There are no amounts in what comes back, and that is the design. A return's
+  figures come from adjustments that are not ledger balances (see
+  `bookkeeping.shinkoku` on 消費税, which refuses the same way); an
+  arithmetically clean wrong number with nothing in the output saying so is
+  the failure this avoids."
+  [j regime]
+  (get-in (facet-of j :jurisdiction/return-filing) [:rule/regimes regime]))
+
+(defn must-file?
+  "Does `regime` have to file here? `nil` / `:yes` / `:conditional`.
+
+  **`:conditional` is not a soft yes.** 所得税法 第百二十条第一項 makes the
+  obligation depend on the year's totals clearing the deductions and on the
+  computed tax clearing 配当控除, with carve-outs inside the parenthesis and
+  第百二十三条第一項 as a separate route. None of that is in a ledger, so a
+  caller that treats `:conditional` as `true` will tell a resident the statute
+  exempts to file anyway. `:rule/condition-not-modelled` on the regime says
+  what was left unread, in words."
+  [j regime]
+  (when-let [r (filing-obligation j regime)]
+    (if (:rule/unconditional? r) :yes :conditional)))
+
+(defn filing-attachments
+  "Documents the return must carry, as a vector, or nil.
+
+  Empty and nil are different: nil is uncatalogued, `[]` would be a regime
+  read to require none. Today only 法人税法 第七十四条第三項 supplies any,
+  and it names the two statements `kotoba-lang/shohyo` produces."
+  [j regime]
+  (:rule/attachments-required (filing-obligation j regime)))
+
+(defn preservation-measures
+  "The 真実性 measures 規則第四条第一項 accepts here, or nil.
+
+  A vector of maps, and **any one of them satisfies the article** — see
+  `:rule/any-one-suffices?`. A store that cannot alter a record is conformant
+  under 第三号ロ; so is a business with no special system and a written
+  事務処理規程 under 第四号. Returning the list rather than a verdict keeps a
+  caller from concluding that the measure it happens to implement is the only
+  one that counts."
+  [j]
+  (:rule/measures (facet-of j :jurisdiction/preservation-integrity)))
+
+(defn preservation-measure?
+  "Is `m` a measure this jurisdiction's article recognises? `nil` when the
+  jurisdiction is uncatalogued — never `false`, because *unknown* and *no* are
+  different answers and only one of them is safe to act on."
+  [j m]
+  (when-let [ms (preservation-measures j)]
+    (boolean (some #(= m (:measure %)) ms))))
+
 (def facet-universe
   "Every facet this catalog knows how to hold, whether or not any
   jurisdiction has one. The denominator for *depth*.
@@ -1378,7 +1561,9 @@
     :jurisdiction/book-search
     :jurisdiction/electronic-transaction-search
     :jurisdiction/wage-withholding
-    :jurisdiction/year-end-adjustment})
+    :jurisdiction/year-end-adjustment
+    :jurisdiction/return-filing
+    :jurisdiction/preservation-integrity})
 
 (defn depth
   "How many of `facet-universe` this jurisdiction has read, and how many it

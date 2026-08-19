@@ -59,21 +59,21 @@ supplies the mapping visibly rather than this library guessing at one.
 
 ### Coverage has two dimensions and reporting one is the lie
 
-`[:us]` is in the catalog with **one facet of eight**. Counting it as a
+`[:us]` is in the catalog with **one facet of ten**. Counting it as a
 covered jurisdiction is true and misleading. So the answer carries both:
 
 ```clojure
 (world-coverage #{[:jp] [:us] [:eu] [:de] [:fr] [:sg] [:gb]})
 ;; :taxlaw/read          [[:eu] [:jp] [:us]]        3 of 7 jurisdictions
 ;; :taxlaw/depth         {[:us] {:read 1 :of 8} …}
-;; :taxlaw/facet-total   {:read 12 :of 56}          the figure that does not flatter
+;; :taxlaw/facet-total   {:read 14 :of 70}          the figure that does not flatter
 ```
 
 12/56 is lower than 3/7, which is the point of reporting it.
 
 ### Four buckets, and the one that matters is `:silent`
 
-`depth` partitions the eight facets into `:read`, `:partly-read`,
+`depth` partitions the ten facets into `:read`, `:partly-read`,
 `:out-of-scope` and `:silent`, and a test asserts they sum to `:of` for every
 jurisdiction. That assertion earned itself immediately: the first version had
 two buckets and `[:eu]` came back **3 + 6 = 9 out of 8**, because a facet can
