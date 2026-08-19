@@ -1187,8 +1187,8 @@
       (let [d (taxlaw/depth [:xx])]
         (is (= 1 (:taxlaw/read d)))
         (is (= 1 (:taxlaw/out-of-scope d)))
-        (is (= 6 (:taxlaw/silent d)))
-        (is (= 6 (count (:taxlaw/silent-facets d))))
+        (is (= 8 (:taxlaw/silent d)))
+        (is (= 8 (count (:taxlaw/silent-facets d))))
         (is (not (some #{:jurisdiction/retention :jurisdiction/wage-withholding}
                        (:taxlaw/silent-facets d)))
             "neither the read one nor the declared one is silent"))))
@@ -1205,14 +1205,14 @@
       (is (= [[:eu] [:jp] [:us]] (:taxlaw/read r)))
       (is (= 4 (:taxlaw/unread-count r)))
       (is (= [[:de] [:fr] [:gb] [:sg]] (:taxlaw/unread r))))
-    (testing "but [:us] is one facet of eight, and counting it as a covered
+    (testing "but [:us] is one facet of ten, and counting it as a covered
               jurisdiction is true and misleading — so the depth rides along"
-      (is (= {:taxlaw/read 1 :taxlaw/partly-read 0 :taxlaw/of 8}
+      (is (= {:taxlaw/read 1 :taxlaw/partly-read 0 :taxlaw/of 10}
              (get-in r [:taxlaw/depth [:us]]))))
     (testing "and the figure that does not flatter: facets read across the
               universe, over facets the universe could have had"
-      (is (= {:read 12 :of 56} (:taxlaw/facet-total r)))
-      (is (< (/ 12 56) (/ 3 7))
+      (is (= {:read 14 :of 70} (:taxlaw/facet-total r)))
+      (is (< (/ 14 70) (/ 3 7))
           "the facet figure is LOWER than the jurisdiction figure, which is
            the point of reporting it"))))
 
@@ -1238,7 +1238,7 @@
       (is (= used (clojure.set/intersection used taxlaw/facet-universe))
           (str "facets in use but not in facet-universe: "
                (pr-str (clojure.set/difference used taxlaw/facet-universe)))))
-    (is (= 8 (count taxlaw/facet-universe)))))
+    (is (= 10 (count taxlaw/facet-universe)))))
 
 (deftest a-jurisdiction-whose-only-facet-is-partly-read-is-not-unread
   (testing "no real jurisdiction is shaped this way — [:eu] has two fully
@@ -1262,7 +1262,7 @@
         (is (= [[:xx]] (:taxlaw/read r)))
         (is (zero? (:taxlaw/unread-count r))
             "read-with-a-gap is not the same as never looked at")
-        (is (= {:read 1 :of 8} (:taxlaw/facet-total r))
+        (is (= {:read 1 :of 10} (:taxlaw/facet-total r))
             "and it counts as one facet read, not zero and not two")))))
 
 (deftest the-invoice-figure-is-not-the-returns-national-tax
@@ -1294,10 +1294,65 @@
           (is (> invoice national)
               "using the first where the second belongs is the overstatement"))))))
 
+(deftest a-conditional-filing-duty-is-not-a-yes
+  (testing "法人税法 第七十四条第一項 binds every 内国法人 unconditionally, so
+            :corporate is :yes"
+    (is (= :yes (taxlaw/must-file? [:jp] :corporate))))
+  (testing "所得税法 第百二十条第一項 does not. The duty turns on the year's
+            totals clearing the deductions and the computed tax clearing
+            配当控除, with carve-outs in the parenthesis and 第百二十三条第一項
+            as a separate route — none of it in a ledger. A caller that read
+            :conditional as true would tell a resident the statute exempts to
+            file anyway"
+    (is (= :conditional (taxlaw/must-file? [:jp] :individual)))
+    (is (not= :yes (taxlaw/must-file? [:jp] :individual)))
+    (is (string? (:rule/condition-not-modelled
+                  (taxlaw/filing-obligation [:jp] :individual)))
+        "and what was left unread is written down, not implied"))
+  (testing "an uncatalogued jurisdiction is nil, never :conditional — unknown
+            and conditional are different answers"
+    (is (nil? (taxlaw/must-file? [:us] :corporate)))
+    (is (nil? (taxlaw/must-file? [:jp] :partnership)))))
+
+(deftest the-corporate-return-carries-the-two-statements
+  (testing "第七十四条第三項 — the seam to kotoba-lang/shohyo, which folds a
+            trial balance into exactly these"
+    (is (= ["貸借対照表" "損益計算書"] (taxlaw/filing-attachments [:jp] :corporate))))
+  (testing "and nil for a regime nobody read, which is not the same as none"
+    (is (nil? (taxlaw/filing-attachments [:us] :corporate)))))
+
+(deftest any-one-integrity-measure-satisfies-the-article
+  (testing "規則第四条第一項 lists four measures and ANY ONE of them satisfies
+            it: a store that cannot alter a record is conformant under 第三号ロ,
+            and so is a business with no special system and a written
+            事務処理規程 under 第四号. A caller told otherwise would conclude
+            it must build all four"
+    (let [f (taxlaw/facet-of [:jp] :jurisdiction/preservation-integrity)]
+      (is (true? (:rule/any-one-suffices? f)))
+      (is (= 4 (count (taxlaw/preservation-measures [:jp]))))
+      (is (every? #(taxlaw/preservation-measure? [:jp] %)
+                  [:timestamp-before-exchange :timestamp-after-exchange
+                   :tamper-evident-system :written-procedure]))))
+  (testing "something the article does not list is false, and an uncatalogued
+            jurisdiction is nil"
+    (is (false? (taxlaw/preservation-measure? [:jp] :blockchain)))
+    (is (nil? (taxlaw/preservation-measure? [:us] :tamper-evident-system)))))
+
 (deftest this-library-computes-no-return-figure
   (testing "積上げ vs 割戻し (施行令 第六十二条 / 第四十六条) is a taxpayer
             election this catalog has not read, so there is no function here
             that produces one — and the absence is asserted rather than left
             for a reader to notice"
     (is (empty? (filter #(re-find #"return|shinkoku|申告" (name %))
-                        (keys (ns-publics 'kotoba.taxlaw)))))))
+                        (keys (ns-publics 'kotoba.taxlaw))))))
+  (testing "and the filing facet added 2026-08-19 holds an OBLIGATION, never a
+            figure: it says who files what by when, and carries no amount,
+            rate or threshold that a caller could mistake for a computed
+            return. The name fence above is a proxy; this checks the data."
+    (doseq [regime [:corporate :individual]
+            :let [r (taxlaw/filing-obligation [:jp] regime)]]
+      (is (some? r) (str regime " is catalogued"))
+      (is (empty? (filter #(re-find #"amount|yen|rate|tax-payable|threshold"
+                                    (name %))
+                          (keys r)))
+          (str regime ": no figure-shaped key")))))

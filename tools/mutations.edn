@@ -8,8 +8,10 @@
 ;; `electronic-transaction-search`) and 消費税額等 (`consumption-tax-amount`,
 ;; 消費税法施行令 第七十条の十). The invoice-registration, retention,
 ;; preservation, withholding and year-end-adjustment facets have suites but
-;; no mutations here, so a clean run means "every invariant of THOSE TWO
+;; no mutations here, so a clean run means "every invariant of THOSE FOUR
 ;; facets is measured" and NOT "every invariant of taxlaw is measured".
+;; (2026-08-19: return-filing and preservation-integrity were added with one
+;; mutation each, which is why the count above says four and not two.)
 ;; Reading it as the second would be the defect the harness exists to catch:
 ;; a check that did not look reporting the same value as one that looked and
 ;; found nothing.
@@ -337,7 +339,7 @@
  {:id :the-facet-universe-covers-what-is-in-use
   :invariant "a facet added without a line here is uncounted, and silently"
   :file "src/kotoba/taxlaw.cljc"
-  :find "    :jurisdiction/year-end-adjustment})"
+  :find "    :jurisdiction/preservation-integrity})"
   :replace "    })"}
 
  ;; --- the invoice figure is not the return's national tax (2026-08-18).
@@ -382,4 +384,16 @@
   :invariant "積上げ vs 割戻し is an unread election; no function produces one"
   :file "src/kotoba/taxlaw.cljc"
   :find "(defn consumption-tax\n"
-  :replace "(defn consumption-tax-return [_ _] 0)\n\n(defn consumption-tax\n"}]
+  :replace "(defn consumption-tax-return [_ _] 0)\n\n(defn consumption-tax\n"}
+
+ {:id :conditional-filing-is-not-a-yes
+  :invariant "所得税法 第百二十条第一項 is conditional; :conditional must not read as :yes"
+  :file "src/kotoba/taxlaw.cljc"
+  :find "       :rule/unconditional? false\n       :rule/condition-provision"
+  :replace "       :rule/unconditional? true\n       :rule/condition-provision"}
+
+ {:id :any-one-integrity-measure-suffices
+  :invariant "規則第四条第一項 accepts ANY ONE of the four measures"
+  :file "src/kotoba/taxlaw.cljc"
+  :find "     :rule/any-one-suffices? true"
+  :replace "     :rule/any-one-suffices? false"}]
