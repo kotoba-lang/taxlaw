@@ -1453,9 +1453,17 @@
        :taxlaw/provision (:rule/provision rule)}
 
       :else
+      ;; `amount` is checked here, not left to `round-exact`'s `integer?` on
+      ;; the PRODUCT. On the JVM `(* 1000.5 10)` stays a Double and the
+      ;; product test happened to catch it; ClojureScript has one number
+      ;; type, so 10005.0 IS 10005 there and a fractional subtotal walked
+      ;; straight through to a confident tax figure. The invariant this
+      ;; article needs is about the subtotal — which is what
+      ;; `:taxlaw/why` below already says it is — so ask about the subtotal.
       (let [by-cat (reduce (fn [acc [cat amount]]
                              (let [[n d] (get-in methods [method cat])]
-                               (assoc acc cat (round-exact (* amount n) d rounding))))
+                               (assoc acc cat (when (integer? amount)
+                                                (round-exact (* amount n) d rounding)))))
                            {} subtotals)]
         (if (some nil? (vals by-cat))
           {:taxlaw/coverage :not-declared
