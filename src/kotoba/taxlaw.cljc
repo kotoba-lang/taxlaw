@@ -68,7 +68,7 @@
   withheld income tax; it does not check the amount, because 所得税法 別表第二
   / 別表第五 were not read. Every result says so in `:taxlaw/amount-checked?`."
   (:require [clojure.set]
-            [clojure.string :as str]))
+            [kotoba.lang.text :as str]))
 
 ;; ---------------------------------------------------------------------------
 ;; sources
