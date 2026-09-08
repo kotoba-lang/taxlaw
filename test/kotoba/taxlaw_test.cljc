@@ -1,7 +1,7 @@
 (ns kotoba.taxlaw-test
   (:require [clojure.test :refer [deftest is testing]]
             [clojure.set]
-            [clojure.string :as str]
+            [kotoba.lang.text :as str]
             [kotoba.taxlaw :as taxlaw]))
 
 ;; ---------------------------------------------------------------------------
