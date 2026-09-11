@@ -3,7 +3,7 @@
 ;; runtime, so a ClojureScript-half defect in `kotoba.taxlaw` cannot hide
 ;; behind a green JVM gate (ADR-2608190100).
 ;;
-;;   nbb --classpath src:test run-tests.cljs
+;;   nbb --classpath src:test run-tests.cljk
 ;;
 ;; This repo is dependency-free, so `src:test` is the whole classpath.
 ;;

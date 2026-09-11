@@ -35,7 +35,7 @@
   ## Citations are checked against the corpus, not against HTTP
 
   Every statute here carries its **e-Gov law id**, and
-  `tools/verify_citations.cljs` resolves those ids against
+  `tools/verify_citations.cljk` resolves those ids against
   `kotoba-lang/jp.go.e-gov.elaws`'s `index/laws.edn` — 9,536 Japanese laws
   with `:law/status`, `:law/title` and content hashes.
 
@@ -106,7 +106,7 @@
 
    ;; Non-JP instruments. These have NO `:law/id` because they are not in
    ;; the e-Gov corpus, and `:source/corpus` says which corpus (if any) can
-   ;; verify them. `tools/verify_citations.cljs` counts them as their own
+   ;; verify them. `tools/verify_citations.cljk` counts them as their own
    ;; class rather than skipping them silently — a citation nobody could
    ;; check must not be indistinguishable from one that checked out.
    :eu/vat-directive
