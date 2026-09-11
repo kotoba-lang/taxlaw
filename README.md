@@ -148,7 +148,7 @@ Member State's rule against all of them.
 
 ### A citation nobody can check is not a citation that checked out
 
-`tools/verify_citations.cljs` reads `:law/id` and checks it against the e-Gov
+`tools/verify_citations.cljk` reads `:law/id` and checks it against the e-Gov
 corpus. A Directive and a CFR section have no `:law/id`, so before this change
 they **vanished from the run** and the summary read `10 / 10 in force` — true of
 the ten it looked at, and read as true of the catalog. The verifier now prints a
@@ -189,7 +189,7 @@ used.
 
 ## Citations are checked against the corpus, not against HTTP
 
-Every statute carries its **e-Gov law id**, and `tools/verify_citations.cljs`
+Every statute carries its **e-Gov law id**, and `tools/verify_citations.cljk`
 resolves those ids against
 [`kotoba-lang/jp.go.e-gov.elaws`](https://github.com/kotoba-lang/jp.go.e-gov.elaws)'s
 `index/laws.edn` — 9,536 Japanese laws with status, title and content hashes.
@@ -207,7 +207,7 @@ Reachability is the weaker claim by some distance:
 A repealed statute serves its page with a 200 like any other.
 
 ```bash
-nbb tools/verify_citations.cljs ../jp.go.e-gov.elaws
+nbb tools/verify_citations.cljk ../jp.go.e-gov.elaws
 # CORPUS  …/index/laws.edn   9536 laws
 # SCANNED 8
 #   ok  132AC0000000048  :law.status/in-force  商法
@@ -384,7 +384,7 @@ exemption could only have helped and nothing needed helping. It refuses only
 where the missing fact is the one that decides, and even then it still reports
 `:taxlaw/missing` — *refusing to conclude is not refusing to inform.*
 
-Fifteen mutations cover this pair (`nbb tools/mutate.cljs`). Two survived the
+Fifteen mutations cover this pair (`nbb tools/mutate.cljk`). Two survived the
 first run and both were real gaps: nothing had exercised the tier where the
 holder says it **cannot** produce on demand, so neither "all three are then
 required" nor "being small is not by itself an exemption" was measured.
@@ -516,6 +516,6 @@ opinion — see `:taxlaw/amount-checked?`.
 | Role | capability |
 | Tests | 24 tests / 255 assertions, all green (`clojure -M:test`) |
 | Dependencies | none |
-| Citation check | `nbb tools/verify_citations.cljs`, three-valued, demonstrated in both directions |
+| Citation check | `nbb tools/verify_citations.cljk`, three-valued, demonstrated in both directions |
 
 Apache-2.0.

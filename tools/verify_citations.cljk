@@ -1,7 +1,7 @@
 #!/usr/bin/env nbb
 ;; Check every statute cited by `kotoba.taxlaw` against the e-Gov corpus.
 ;;
-;;   nbb tools/verify_citations.cljs [path/to/jp.go.e-gov.elaws]
+;;   nbb tools/verify_citations.cljk [path/to/jp.go.e-gov.elaws]
 ;;
 ;; Default corpus path assumes the kotoba-lang workspace layout
 ;; (`../jp.go.e-gov.elaws`), the same convention labor/psa/shift use.
@@ -42,7 +42,7 @@
   namespace: nbb would have to load the whole library to get at a list of
   strings, and this script must be runnable when that library is mid-edit."
   []
-  (let [f "src/kotoba/taxlaw.cljc"]
+  (let [f "src/kotoba/taxlaw.cljk"]
     (if-not (fs/existsSync f)
       []
       (->> (fs/readFileSync f "utf8")
@@ -64,7 +64,7 @@
   that could not run returning what a check that ran and found nothing
   returns."
   []
-  (let [f "src/kotoba/taxlaw.cljc"]
+  (let [f "src/kotoba/taxlaw.cljk"]
     (if-not (fs/existsSync f)
       []
       (->> (fs/readFileSync f "utf8")
@@ -75,7 +75,7 @@
            vec))))
 
 (defn- titles-from-source []
-  (let [f "src/kotoba/taxlaw.cljc"]
+  (let [f "src/kotoba/taxlaw.cljk"]
     (if-not (fs/existsSync f)
       {}
       (let [t (fs/readFileSync f "utf8")]
@@ -99,7 +99,7 @@
     (when (empty? ids)
       ;; evidence floor: zero citations scanned is not zero citations broken.
       (println "SCANNED\t0")
-      (die 2 "Refusing to report a pass: no :law/id found in src/kotoba/taxlaw.cljc"))
+      (die 2 "Refusing to report a pass: no :law/id found in src/kotoba/taxlaw.cljk"))
 
     (when-not (fs/existsSync index-file)
       (println "SCANNED\t0")
