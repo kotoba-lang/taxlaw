@@ -1,7 +1,7 @@
-#!/usr/bin/env nbb
+#!/usr/bin/env kbb
 ;; Check every statute cited by `kotoba.taxlaw` against the e-Gov corpus.
 ;;
-;;   nbb tools/verify_citations.cljk [path/to/jp.go.e-gov.elaws]
+;;   kbb --backend sci tools/verify_citations.cljk [path/to/jp.go.e-gov.elaws]
 ;;
 ;; Default corpus path assumes the kotoba-lang workspace layout
 ;; (`../jp.go.e-gov.elaws`), the same convention labor/psa/shift use.

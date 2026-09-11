@@ -207,7 +207,7 @@ Reachability is the weaker claim by some distance:
 A repealed statute serves its page with a 200 like any other.
 
 ```bash
-nbb tools/verify_citations.cljk ../jp.go.e-gov.elaws
+kbb --backend sci tools/verify_citations.cljk ../jp.go.e-gov.elaws
 # CORPUS  …/index/laws.edn   9536 laws
 # SCANNED 8
 #   ok  132AC0000000048  :law.status/in-force  商法
@@ -384,7 +384,7 @@ exemption could only have helped and nothing needed helping. It refuses only
 where the missing fact is the one that decides, and even then it still reports
 `:taxlaw/missing` — *refusing to conclude is not refusing to inform.*
 
-Fifteen mutations cover this pair (`nbb tools/mutate.cljk`). Two survived the
+Fifteen mutations cover this pair (`kbb --backend sci tools/mutate.cljk`). Two survived the
 first run and both were real gaps: nothing had exercised the tier where the
 holder says it **cannot** produce on demand, so neither "all three are then
 required" nor "being small is not by itself an exemption" was measured.
@@ -514,8 +514,8 @@ opinion — see `:taxlaw/amount-checked?`.
 | | |
 |---|---|
 | Role | capability |
-| Tests | 24 tests / 255 assertions, all green (`clojure -M:test`) |
+| Tests | 24 tests / 255 assertions, all green (`kbb -M:test`) |
 | Dependencies | none |
-| Citation check | `nbb tools/verify_citations.cljk`, three-valued, demonstrated in both directions |
+| Citation check | `kbb --backend sci tools/verify_citations.cljk`, three-valued, demonstrated in both directions |
 
 Apache-2.0.
