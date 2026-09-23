@@ -31,7 +31,7 @@
 
 (ns verify-citations
   (:require [kotoba.lang.text :as str]
-            [clojure.edn :as edn]
+            [kotoba.lang.edn :as edn]
             ["fs" :as fs]
             ["path" :as path]))
 
