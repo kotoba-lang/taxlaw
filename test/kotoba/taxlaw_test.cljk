@@ -1,6 +1,6 @@
 (ns kotoba.taxlaw-test
   (:require [kotoba.test :refer [deftest is testing]]
-            [clojure.set]
+            [kotoba.lang.coll]
             [kotoba.lang.text :as str]
             [kotoba.taxlaw :as taxlaw]))
 
@@ -1235,9 +1235,9 @@
                                              :jurisdiction/out-of-scope}
                                            (keys m))))
                      taxlaw/jurisdictions)]
-      (is (= used (clojure.set/intersection used taxlaw/facet-universe))
+      (is (= used (kotoba.lang.coll/intersection used taxlaw/facet-universe))
           (str "facets in use but not in facet-universe: "
-               (pr-str (clojure.set/difference used taxlaw/facet-universe)))))
+               (pr-str (kotoba.lang.coll/difference used taxlaw/facet-universe)))))
     (is (= 10 (count taxlaw/facet-universe)))))
 
 (deftest a-jurisdiction-whose-only-facet-is-partly-read-is-not-unread
