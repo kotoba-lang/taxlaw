@@ -67,7 +67,7 @@
   opinion. The withholding facet checks that a payroll record *accounts for*
   withheld income tax; it does not check the amount, because 所得税法 別表第二
   / 別表第五 were not read. Every result says so in `:taxlaw/amount-checked?`."
-  (:require [clojure.set]
+  (:require [kotoba.lang.coll]
             [kotoba.lang.text :as str]))
 
 ;; ---------------------------------------------------------------------------
@@ -1599,13 +1599,13 @@
   behind the absence."
   [j]
   (let [m (jurisdiction j)
-        oos (clojure.set/intersection (set (keys (:jurisdiction/out-of-scope m)))
+        oos (kotoba.lang.coll/intersection (set (keys (:jurisdiction/out-of-scope m)))
                                       facet-universe)
         present (into #{} (filter #(contains? m %)) facet-universe)
-        both (clojure.set/intersection present oos)
-        read-only (clojure.set/difference present oos)
-        oos-only (clojure.set/difference oos present)
-        silent (clojure.set/difference facet-universe present oos)]
+        both (kotoba.lang.coll/intersection present oos)
+        read-only (kotoba.lang.coll/difference present oos)
+        oos-only (kotoba.lang.coll/difference oos present)
+        silent (kotoba.lang.coll/difference facet-universe present oos)]
     {:taxlaw/read (count read-only)
      :taxlaw/partly-read (count both)
      :taxlaw/out-of-scope (count oos-only)
@@ -1664,7 +1664,7 @@
       (let [touched? (fn [j] (let [d (depth j)]
                                (pos? (+ (:taxlaw/read d) (:taxlaw/partly-read d)))))
             read (into #{} (filter touched?) u)
-            unread (clojure.set/difference u read)
+            unread (kotoba.lang.coll/difference u read)
             depths (into {} (map (juxt identity depth)) read)]
         {:taxlaw/coverage :checked
          :taxlaw/universe-size (count u)
@@ -1687,7 +1687,7 @@
          ;; the rest — but a caller that expected its universe to contain
          ;; everything read should see it.
          :taxlaw/outside-universe
-         (vec (sort-by str (clojure.set/difference (set (keys jurisdictions)) u)))}))))
+         (vec (sort-by str (kotoba.lang.coll/difference (set (keys jurisdictions)) u)))}))))
 
 ;; ---------------------------------------------------------------------------
 ;; 検索要件 — 規則第五条第五項第一号ハ (帳簿) and 規則第二条第六項第五号 (電子取引)
